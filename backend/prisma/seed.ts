@@ -15,10 +15,12 @@ const toppings: Prisma.InputJsonValue = [
 ];
 
 async function main(): Promise<void> {
-  await prisma.payment.deleteMany();
-  await prisma.orderItem.deleteMany();
-  await prisma.order.deleteMany();
-  await prisma.product.deleteMany();
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Seed xóa dữ liệu đơn hàng và sản phẩm, không chạy trên production.');
+  }
+
+  // Xóa sạch dữ liệu mẫu cũ và đặt lại id về 1, để mỗi lần seed sản phẩm luôn có id 1..4.
+  await prisma.$executeRaw`TRUNCATE TABLE "Payment", "OrderItem", "Order", "Product" RESTART IDENTITY CASCADE`;
 
   await prisma.product.createMany({
     data: [
