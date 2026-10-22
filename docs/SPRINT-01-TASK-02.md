@@ -12,9 +12,10 @@ Là nhóm phát triển, chúng tôi cần một cơ sở dữ liệu PostgreSQL
 - [x] Dữ liệu mẫu gồm 4 sản phẩm như wireframe của đề.
 - [x] Thiết kế size (S/M/L), topping và tồn kho (`stock`, `version`).
 - [x] README có hướng dẫn cài PostgreSQL, migrate, seed.
-- [ ] Đã chạy migrate + seed trên PostgreSQL thật và thấy đủ 4 sản phẩm (Prisma Studio).
-- [ ] Đã chạy `npm run typecheck`, `npm run test`, `npm run build` không lỗi.
-- [ ] Đã push `feature/tv02` và TV3 xác nhận pull được.
+- [x] Đã chạy migrate + seed trên PostgreSQL thật (22/10/2026); seed báo nạp 4 sản phẩm thành công.
+- [x] Đã chạy `npm run typecheck`, `npm run test`, `npm run build` không lỗi (22/10/2026).
+- [x] Đã push `feature/tv02` lên GitHub (commit `93d5e06`).
+- [ ] TV3 xác nhận pull được.
 
 ## Mô hình dữ liệu
 
@@ -105,7 +106,7 @@ npm run build
 ## Bàn giao
 
 - Thành viên: TV2 • Task: 2 (cơ sở dữ liệu) • Nhánh: `feature/tv02` (kế thừa `feature/tv01`)
-- Mã commit mới: (điền sau khi push)
+- Mã commit bàn giao: `93d5e06` (các commit sau đó, nếu có, chỉ cập nhật tài liệu)
 - URL/trang liên quan: chưa có API sản phẩm; kiểm tra dữ liệu bằng Prisma Studio.
 - Người nhận tiếp: TV3
 - Vấn đề còn tồn tại: chưa có test tự động cho phần cơ sở dữ liệu (cần PostgreSQL thật); Docker Compose cho PostgreSQL do TV6 làm ở Sprint 3.
