@@ -1,6 +1,6 @@
-# BrewLite ☕ | Software Engineering — Sprint 1 / Task 1
+# BrewLite ☕ | Software Engineering — Sprint 1 / Task 1–2
 
-BrewLite là dự án **ứng dụng đặt đồ uống, thanh toán không tiền mặt** của nhóm môn Công nghệ Phần mềm. Dự án sử dụng **Next.js (frontend)** và **NestJS (backend)** theo yêu cầu của đề bài. Đây là **bản khởi tạo TV1, Task 1**, không phải ứng dụng đặt hàng hoàn chỉnh.
+BrewLite là dự án **ứng dụng đặt đồ uống, thanh toán không tiền mặt** của nhóm môn Công nghệ Phần mềm. Dự án sử dụng **Next.js (frontend)** và **NestJS (backend)** theo yêu cầu của đề bài. Hiện có **nền tảng dự án (TV1, Task 1)** và **cơ sở dữ liệu PostgreSQL + Prisma (TV2, Task 2)**; đây chưa phải ứng dụng đặt hàng hoàn chỉnh.
 
 ## 1. Phạm vi bàn giao TV1
 
@@ -9,7 +9,7 @@ BrewLite là dự án **ứng dụng đặt đồ uống, thanh toán không ti�
 - [x] NestJS + TypeScript có `GET /api` và `GET /api/health`.
 - [x] `npm workspaces` để cài/thực thi cùng repo.
 - [x] `.gitignore`, `.env.example`, README, CONTRIBUTING và ví dụ unit test.
-- [ ] PostgreSQL, Prisma, schema Product (phân công TV2).
+- [x] PostgreSQL, Prisma, schema Product và dữ liệu mẫu (TV2, xem mục 7).
 - [ ] API sản phẩm `/products` (TV3), menu, giỏ hàng, auth, payment... (những thành viên/Sprint sau).
 
 ## 2. Điều kiện chạy
@@ -21,7 +21,7 @@ node -v
 npm -v
 ```
 
-Cài Git và VS Code nếu chưa có. Đối với Task 1 **chưa cần cài PostgreSQL**.
+Cài Git và VS Code nếu chưa có. Từ Task 2, backend **cần PostgreSQL 14+ đang chạy** (cài từ https://www.postgresql.org/download/, nhớ mật khẩu của user `postgres`). Nếu PostgreSQL chưa chạy, backend sẽ báo lỗi kết nối và dừng ngay khi khởi động.
 
 ## 3. Cài và chạy (Windows / PowerShell / VS Code Terminal)
 
@@ -31,12 +31,32 @@ Mở terminal tại thư mục gốc có file `package.json` của BrewLite, ch�
 npm install
 Copy-Item frontend/.env.example frontend/.env.local
 Copy-Item backend/.env.example backend/.env
+# Mở backend/.env và sửa DATABASE_URL cho đúng user/mật khẩu PostgreSQL trên máy bạn (xem mục "Chuẩn bị cơ sở dữ liệu")
+npm run prisma:migrate -w @brewlite/backend
+npm run prisma:seed -w @brewlite/backend
 npm run dev
 ```
 
 > Linux/macOS: thay hai lệnh `Copy-Item` bằng `cp`.
 >
-> `npm install` sẽ tạo **package-lock.json**. Hãy commit file này vào GitHub để những người sau cùng cài đúng dependency; **không commit `node_modules`**.
+> Repo đã có **package-lock.json**; dùng `npm ci` thay cho `npm install` nếu muốn cài đúng phiên bản dependency. **Không commit `node_modules`**.
+>
+> Sau mỗi lần `npm install`/`npm ci`, Prisma Client được sinh tự động (script `postinstall`). Nếu gặp lỗi `@prisma/client did not initialize yet` hoặc `typecheck` báo thiếu `Prisma`, chạy tay: `npm run prisma:generate -w @brewlite/backend`.
+
+### Chuẩn bị cơ sở dữ liệu (TV2)
+
+1. Tạo database rỗng, ví dụ bằng `psql` hoặc pgAdmin:
+
+   ```powershell
+   psql -U postgres -c "CREATE DATABASE brewlite_db;"
+   ```
+
+2. Trong `backend/.env`, đặt `DATABASE_URL` theo mẫu `postgresql://USER:MAT_KHAU@localhost:5432/brewlite_db?schema=public`. File `.env` đã được Git bỏ qua, **không đưa mật khẩu thật lên GitHub**.
+3. Áp dụng migration để tạo bảng: `npm run prisma:migrate -w @brewlite/backend`.
+4. Nạp 4 sản phẩm mẫu: `npm run prisma:seed -w @brewlite/backend`. Seed **xóa sạch Product/Order/OrderItem/Payment** rồi nạp lại và đặt id về 1, nên chạy lại bao nhiêu lần sản phẩm vẫn có id 1–4. Seed từ chối chạy khi `NODE_ENV=production`.
+5. Xem dữ liệu: `npm run prisma:studio -w @brewlite/backend`.
+
+Các lệnh Prisma khác (chạy trong workspace backend): `prisma:generate`, `prisma:deploy` (áp dụng migration có sẵn, dùng cho Docker/CI), `prisma:reset` (xóa DB, chạy lại toàn bộ migration và seed), `prisma:push`.
 
 Mở:
 
@@ -44,7 +64,7 @@ Mở:
 - **Backend hello:** http://localhost:4000/api
 - **Backend health:** http://localhost:4000/api/health
 
-Khi API khởi động, trang frontend sẽ tự kiểm tra backend và hiển thị "Đã kết nối". Không yêu cầu database ở Task 1.
+Khi API khởi động, trang frontend sẽ tự kiểm tra backend và hiển thị "Đã kết nối". Backend chỉ khởi động được khi PostgreSQL đang chạy và `DATABASE_URL` đúng.
 
 ### Chạy riêng từng phần
 
@@ -78,6 +98,7 @@ BrewLite/
 │   └── pull_request_template.md
 ├── docs/
 │   ├── SPRINT-01-TASK-01.md
+│   ├── SPRINT-01-TASK-02.md
 │   └── GIT-WORKFLOW.md
 ├── frontend/
 │   ├── app/
@@ -88,7 +109,14 @@ BrewLite/
 │   ├── .env.example
 │   └── package.json
 ├── backend/
+│   ├── prisma/
+│   │   ├── migrations/
+│   │   ├── schema.prisma
+│   │   └── seed.ts
 │   ├── src/
+│   │   ├── prisma/
+│   │   │   ├── prisma.module.ts
+│   │   │   └── prisma.service.ts
 │   │   ├── main.ts
 │   │   ├── app.module.ts
 │   │   ├── app.controller.ts
@@ -156,12 +184,18 @@ npm install
 
 Khi repo đã có `package-lock.json` do TV1 commit, TV2 có thể dùng `npm ci` thay cho `npm install` để cài tái lập chính xác.
 
-## 7. Giao việc tiếp theo cho TV2
+## 7. Bàn giao TV2 → TV3 (Task 2 — cơ sở dữ liệu)
 
-- Thiết lập PostgreSQL + Prisma trong thư mục `backend/`.
-- Thiết kế schema `Product`, bổ sung dữ liệu mẫu; thống nhất giá và stock với TV3.
-- Duy trì endpoint `/api/health` và không làm hỏng `npm run dev`, `npm run test`.
-- Không đưa mật khẩu hoặc chuỗi kết nối thực lên Git.
-- Đọc `CONTRIBUTING.md` và `docs/GIT-WORKFLOW.md` trước khi push.
+**TV2 đã làm** (chi tiết và cách kiểm tra trong `docs/SPRINT-01-TASK-02.md`):
+
+- [x] PostgreSQL + Prisma 6: `backend/prisma/schema.prisma` và các migration trong `backend/prisma/migrations/`.
+- [x] `PrismaModule` (global) và `PrismaService` trong `backend/src/prisma/`, đã import vào `AppModule`; TV3 chỉ cần inject `PrismaService`.
+- [x] Các bảng theo mục 12.2 của đề: `Product`, `User`, `Order`, `OrderItem`, `Payment` và enum `OrderStatus`.
+- [x] `Product` có `stock`, `version` (dùng cho optimistic locking ở Task 10), `sizes`, `toppings` (JSON).
+- [x] Seed 4 sản phẩm đúng wireframe của đề: Cà phê sữa 35.000đ, Americano 40.000đ, Cappuccino 45.000đ, Trà đào 39.000đ.
+
+**Quy ước giá (đề xuất, cần cả nhóm thống nhất):** đơn giá = `product.price` + `size.price` + tổng `price` của các topping đã chọn; `lineTotal` = đơn giá × `qty`. `price` trong `sizes`/`toppings` là **phụ thu** (VND), không phải giá tuyệt đối. Giá luôn do server tính lại.
+
+**TV3 làm tiếp:** `GET /products` (id, name, price, imageUrl), `GET /products/:id` (thêm stock, sizes, toppings) và trả 404 khi không có sản phẩm; truy vấn bằng `PrismaService`. Làm theo mục 3 (cài, `.env`, migrate, seed) trước khi code.
 
 > **Lưu ý về API:** đề yêu cầu `GET /products`, `GET /products/:id` ở Task 2. Phần này được giao TV3 trong lịch nhóm; hai endpoint `/api` trong Task 1 chỉ là endpoint thử nghiệm. Cần thống nhất URL API thật với nhóm khi bắt đầu Task 2.
