@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import * as process from 'process';
 import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -64,7 +63,7 @@ async function main(): Promise<void> {
 main()
   .catch((error: unknown) => {
     console.error('Seed failed:', error);
-    process.exit(1);
+    throw error;
   })
   .finally(async () => {
     await prisma.$disconnect();
