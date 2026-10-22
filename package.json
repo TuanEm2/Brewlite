@@ -1,0 +1,27 @@
+{
+  "name": "brewlite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BrewLite - Software Engineering group project",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "engines": {
+    "node": ">=22.22.3",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n FRONTEND,BACKEND -c cyan,green \"npm run dev -w @brewlite/frontend\" \"npm run start:dev -w @brewlite/backend\"",
+    "dev:web": "npm run dev -w @brewlite/frontend",
+    "dev:api": "npm run start:dev -w @brewlite/backend",
+    "build": "npm run build -w @brewlite/backend && npm run build -w @brewlite/frontend",
+    "typecheck": "npm run typecheck -ws",
+    "test": "npm run test -w @brewlite/backend",
+    "test:e2e": "npm run test:e2e -w @brewlite/backend",
+    "postinstall": "npm run prisma:generate -w @brewlite/backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

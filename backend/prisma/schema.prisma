@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  passwordHash  String
+  loyaltyPoints Int      @default(0)
+  createdAt     DateTime @default(now())
+  orders        Order[]
+}
+
+/// Sản phẩm trong menu. Mọi số tiền tính bằng VND (số nguyên).
+model Product {
+  id         Int         @id @default(autoincrement())
+  name       String
+  /// Giá gốc, ứng với size S và không chọn topping.
+  price      Int
+  imageUrl   String
+  /// Số lượng tồn kho.
+  stock      Int         @default(100)
+  /// Tăng thêm 1 mỗi lần cập nhật tồn kho; dùng làm điều kiện `where: { id, version }` khi trừ kho (optimistic locking, Task 10).
+  version    Int         @default(0)
+  /// Danh sách size, ví dụ [{ "name": "S", "price": 0 }]. `price` là phụ thu cộng vào giá gốc.
+  sizes      Json
+  /// Danh sách topping, ví dụ [{ "name": "Trân châu", "price": 5000 }]. `price` là phụ thu của mỗi topping.
+  toppings   Json
+  orderItems OrderItem[]
+}
+
+model Order {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  status    OrderStatus @default(PENDING)
+  total     Int
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id])
+  items     OrderItem[]
+  payment   Payment?
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  productId Int
+  size      String
+  qty       Int
+  lineTotal Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id             Int      @id @default(autoincrement())
+  orderId        Int      @unique
+  idempotencyKey String   @unique
+  amount         Int
+  method         String
+  createdAt      DateTime @default(now())
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
