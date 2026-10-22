@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from "next/link";
 
 interface Product {
   id: number;
@@ -110,9 +111,9 @@ export default function MenuPage() {
                       {product.price.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
-                  <button className="bg-amber-800 hover:bg-amber-900 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm hover:shadow transition transform active:scale-95">
+                  <Link href={`/products/${product.id}`} className="bg-amber-800 hover:bg-amber-900 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm hover:shadow transition transform active:scale-95">
                     Chọn món
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}
