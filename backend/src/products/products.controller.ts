@@ -1,9 +1,9 @@
 import { Controller, Get, Param } from '@nestjs/common';
+import { PositiveIntIdPipe } from '../common/pipes/positive-int-id.pipe';
 import {
   ProductDetailDto,
   ProductSummaryDto,
 } from './dto/product-response.dto';
-import { PositiveIntIdPipe } from './positive-int-id.pipe';
 import { ProductsService } from './products.service';
 
 // Đề ghi `/products`; thêm `/api/products` để khớp prefix `api` của AppController.

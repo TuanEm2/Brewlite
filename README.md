@@ -86,6 +86,7 @@ Các lệnh kiểm tra bổ sung:
 npm run typecheck
 npm run test
 npm run build
+npm run test:e2e   # cần PostgreSQL đang chạy (TV3, Task 2)
 ```
 
 **Ghi chú:** `npm run build` cần mạng tải dependency khi cài lần đầu. Do môi trường tạo gói không truy cập được npm registry, bạn cần chạy các lệnh trên máy của mình để xác nhận build thực tế trước khi push.
@@ -99,6 +100,7 @@ BrewLite/
 ├── docs/
 │   ├── SPRINT-01-TASK-01.md
 │   ├── SPRINT-01-TASK-02.md
+│   ├── SPRINT-01-TASK-02-API.md
 │   └── GIT-WORKFLOW.md
 ├── frontend/
 │   ├── app/
@@ -114,14 +116,24 @@ BrewLite/
 │   │   ├── schema.prisma
 │   │   └── seed.ts
 │   ├── src/
+│   │   ├── common/pipes/
+│   │   │   └── positive-int-id.pipe.ts
 │   │   ├── prisma/
 │   │   │   ├── prisma.module.ts
 │   │   │   └── prisma.service.ts
+│   │   ├── products/
+│   │   │   ├── dto/product-response.dto.ts
+│   │   │   ├── products.controller.ts
+│   │   │   ├── products.module.ts
+│   │   │   └── products.service.ts
 │   │   ├── main.ts
 │   │   ├── app.module.ts
 │   │   ├── app.controller.ts
 │   │   ├── app.service.ts
 │   │   └── app.controller.spec.ts
+│   ├── test/
+│   │   ├── jest-e2e.json
+│   │   └── products.e2e-spec.ts
 │   ├── .env.example
 │   └── package.json
 ├── .env.example
@@ -137,6 +149,10 @@ BrewLite/
 |---|---|---|
 | `GET` | `/api` | Trả thông báo chào từ NestJS |
 | `GET` | `/api/health` | Trả JSON xác nhận backend hoạt động |
+| `GET` | `/products` | Danh sách sản phẩm (menu): `id`, `name`, `price`, `imageUrl` (TV3, Task 2) |
+| `GET` | `/products/:id` | Chi tiết sản phẩm, thêm `stock`, `sizes`, `toppings`; `400` id sai, `404` không có (TV3, Task 2) |
+
+`/products` và `/products/:id` cũng có ở `/api/products`, `/api/products/:id`. Chi tiết và ví dụ JSON trong `docs/SPRINT-01-TASK-02-API.md`.
 
 Ví dụ kết quả từ `GET /api/health`:
 
@@ -199,3 +215,13 @@ Khi repo đã có `package-lock.json` do TV1 commit, TV2 có thể dùng `npm ci
 **TV3 làm tiếp:** `GET /products` (id, name, price, imageUrl), `GET /products/:id` (thêm stock, sizes, toppings) và trả 404 khi không có sản phẩm; truy vấn bằng `PrismaService`. Làm theo mục 3 (cài, `.env`, migrate, seed) trước khi code.
 
 > **Lưu ý về API:** đề yêu cầu `GET /products`, `GET /products/:id` ở Task 2. Phần này được giao TV3 trong lịch nhóm; hai endpoint `/api` trong Task 1 chỉ là endpoint thử nghiệm. Cần thống nhất URL API thật với nhóm khi bắt đầu Task 2.
+
+## 8. Bàn giao TV3 → TV4 (Task 2 — API sản phẩm)
+
+**TV3 đã làm** (chi tiết, ví dụ JSON và cách kiểm tra trong `docs/SPRINT-01-TASK-02-API.md`):
+
+- [x] `GET /products` và `GET /products/:id` truy vấn qua `PrismaService`; trả `400` khi id sai, `404` khi không có sản phẩm.
+- [x] Thống nhất URL API: phục vụ cả `/products` (đúng đề) và `/api/products` (khớp prefix `api` của Task 1).
+- [x] Unit test cho kiểm tra id (`npm run test`) và e2e cho hai endpoint (`npm run test:e2e`, cần PostgreSQL).
+
+**TV4 làm tiếp:** trang Menu gọi `${NEXT_PUBLIC_API_URL}/products`, hiển thị hình/tên/giá, có loading và empty state.

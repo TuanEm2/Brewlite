@@ -18,6 +18,7 @@
     "build": "npm run build -w @brewlite/backend && npm run build -w @brewlite/frontend",
     "typecheck": "npm run typecheck -ws",
     "test": "npm run test -w @brewlite/backend",
+    "test:e2e": "npm run test:e2e -w @brewlite/backend",
     "postinstall": "npm run prisma:generate -w @brewlite/backend"
   },
   "devDependencies": {
