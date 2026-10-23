@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from "next/link";
+import { useCartStore } from "../../store/cart-store";
+import { cartCount } from "../../store/cart-utils";
 
 interface Product {
   id: number;
@@ -16,6 +18,9 @@ export default function MenuPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const cartQuantity = useCartStore((state) => cartCount(state.items));
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -47,6 +52,9 @@ export default function MenuPage() {
           </h1>
           <p className="mt-3 text-lg text-amber-700 max-w-2xl mx-auto">
             Thưởng thức hương vị đậm đà với đặt hàng & thanh toán không tiền mặt tiện lợi.
+          </p>
+          <p className="mt-4 inline-flex rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-900" aria-live="polite">
+            🛒 Giỏ hàng: {mounted ? cartQuantity : "…"} ly
           </p>
         </div>
 

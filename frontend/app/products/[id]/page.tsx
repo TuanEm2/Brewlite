@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useCartStore } from "../../../store/cart-store";
+import { cartCount } from "../../../store/cart-utils";
 
 type PricedOption = {
   name: string;
@@ -38,6 +40,32 @@ export default function ProductDetailPage() {
   const [selectedSize, setSelectedSize] = useState("");
   const [selectedToppings, setSelectedToppings] = useState<string[]>([]);
   const [retry, setRetry] = useState(0);
+  const [cartNotice, setCartNotice] = useState("");
+  const [mounted, setMounted] = useState(false);
+  const addItem = useCartStore((state) => state.addItem);
+  const cartQuantity = useCartStore((state) => cartCount(state.items));
+
+  useEffect(() => setMounted(true), []);
+
+  function addSelectedProduct() {
+    if (!product || product.stock <= 0) return;
+    const size = product.sizes.find((option) => option.name === selectedSize);
+    if (!size) return;
+
+    const result = addItem({
+      productId: product.id,
+      name: product.name,
+      imageUrl: product.imageUrl,
+      basePrice: product.price,
+      stock: product.stock,
+      size,
+      toppings: product.toppings.filter((topping) =>
+        selectedToppings.includes(topping.name)
+      ),
+      quantity: 1,
+    });
+    setCartNotice(result.message);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -48,6 +76,7 @@ export default function ProductDetailPage() {
       setProduct(null);
       setSelectedSize("");
       setSelectedToppings([]);
+      setCartNotice("");
 
       try {
         const response = await fetch(
@@ -256,6 +285,23 @@ export default function ProductDetailPage() {
                   Giá một ly: {money(total)}
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={addSelectedProduct}
+                disabled={product.stock <= 0 || !selectedSize}
+                className="mt-4 w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-gray-400"
+              >
+                {product.stock <= 0 ? "Đã hết hàng" : "Thêm vào giỏ hàng"}
+              </button>
+              <p className="mt-3 text-sm text-amber-900">
+                Giỏ hàng: {mounted ? cartQuantity : "…"} ly
+              </p>
+              {cartNotice && (
+                <p role="status" aria-live="polite" className="mt-2 text-sm font-semibold text-green-700">
+                  {cartNotice}
+                </p>
+              )}
             </div>
           </article>
         )}
