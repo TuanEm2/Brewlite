@@ -101,6 +101,7 @@ BrewLite/
 │   ├── SPRINT-01-TASK-01.md
 │   ├── SPRINT-01-TASK-02.md
 │   ├── SPRINT-01-TASK-02-API.md
+│   ├── SPRINT-02-TASK-06-MODEL.md
 │   └── GIT-WORKFLOW.md
 ├── frontend/
 │   ├── app/
@@ -121,6 +122,11 @@ BrewLite/
 │   │   ├── prisma/
 │   │   │   ├── prisma.module.ts
 │   │   │   └── prisma.service.ts
+│   │   ├── orders/
+│   │   │   ├── dto/
+│   │   │   ├── pricing.ts
+│   │   │   ├── orders.module.ts
+│   │   │   └── orders.service.ts
 │   │   ├── products/
 │   │   │   ├── dto/product-response.dto.ts
 │   │   │   ├── products.controller.ts
@@ -133,6 +139,7 @@ BrewLite/
 │   │   └── app.controller.spec.ts
 │   ├── test/
 │   │   ├── jest-e2e.json
+│   │   ├── orders.e2e-spec.ts
 │   │   └── products.e2e-spec.ts
 │   ├── .env.example
 │   └── package.json
@@ -237,3 +244,16 @@ Khi repo đã có `package-lock.json` do TV1 commit, TV2 có thể dùng `npm ci
 - [x] Cho phép người dùng chọn thêm các loại topping đi kèm.
 - [x] Tự động tính toán và hiển thị chính xác tổng giá lựa chọn dựa trên giá cơ bản, phụ thu size và topping.
 - [x] Thực hiện commit code và đẩy nhánh lên Git với tên: `feature/tv05`.
+
+## 10. Bàn giao TV3 → TV4 (Task 6 — model đơn hàng)
+
+**TV3 đã làm** (chi tiết, ví dụ JSON và cách kiểm tra trong `docs/SPRINT-02-TASK-06-MODEL.md`):
+
+- [x] Migration `order_model_task6`: `Order` thêm `discount`, `voucherCode`, `idempotencyKey`, `updatedAt`, `userId` để trống được; `OrderItem` thêm `toppings`, `unitPrice`.
+- [x] `CreateOrderDto` (class-validator) đúng dữ liệu giỏ hàng: `productId`, `size`, `toppings`, `quantity`.
+- [x] `OrdersService.createPending`: tự tính giá, kiểm tra sản phẩm/size/topping/tồn kho, lưu đơn `PENDING` trong một transaction.
+- [x] 18 unit test (`npm run test`) và 5 integration test (`npm run test:e2e`, cần PostgreSQL).
+
+Sau khi merge: `npm install` rồi `npm run prisma:deploy -w @brewlite/backend`.
+
+**TV4 làm tiếp:** `POST /orders` gọi `OrdersService.createPending`, bật `ValidationPipe`, trả mã đơn và trạng thái `PENDING`.

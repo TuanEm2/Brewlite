@@ -41,11 +41,26 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm có id ${id}`);
     }
-    // `sizes`/`toppings` là cột Json; seed của TV2 bảo đảm dạng PricedOption[].
-    return {
-      ...product,
-      sizes: product.sizes as unknown as PricedOption[],
-      toppings: product.toppings as unknown as PricedOption[],
-    };
+    return toDetail(product);
   }
+
+  /** Lấy nhiều sản phẩm một lần để tính giá đơn hàng (Task 6). Id không tồn tại bị bỏ qua. */
+  async findManyByIds(ids: number[]): Promise<ProductDetailDto[]> {
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: DETAIL_SELECT,
+    });
+    return products.map(toDetail);
+  }
+}
+
+type DetailRow = Prisma.ProductGetPayload<{ select: typeof DETAIL_SELECT }>;
+
+// `sizes`/`toppings` là cột Json; seed của TV2 bảo đảm dạng PricedOption[].
+function toDetail(product: DetailRow): ProductDetailDto {
+  return {
+    ...product,
+    sizes: product.sizes as unknown as PricedOption[],
+    toppings: product.toppings as unknown as PricedOption[],
+  };
 }

@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from "next/link";
+import { useCartStore } from "../../store/cart-store";
+import { cartCount } from "../../store/cart-utils";
 
 interface Product {
   id: number;
@@ -15,6 +18,9 @@ export default function MenuPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const cartQuantity = useCartStore((state) => cartCount(state.items));
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -47,6 +53,9 @@ export default function MenuPage() {
           <p className="mt-3 text-lg text-amber-700 max-w-2xl mx-auto">
             Thưởng thức hương vị đậm đà với đặt hàng & thanh toán không tiền mặt tiện lợi.
           </p>
+          <Link href="/cart" className="mt-4 inline-flex rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100" aria-live="polite">
+            🛒 Giỏ hàng: {mounted ? cartQuantity : "…"} ly →
+          </Link>
         </div>
 
         {/* Loading State */}
@@ -110,9 +119,9 @@ export default function MenuPage() {
                       {product.price.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
-                  <button className="bg-amber-800 hover:bg-amber-900 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm hover:shadow transition transform active:scale-95">
+                  <Link href={`/products/${product.id}`} className="bg-amber-800 hover:bg-amber-900 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm hover:shadow transition transform active:scale-95">
                     Chọn món
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}
