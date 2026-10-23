@@ -53,9 +53,9 @@ export default function MenuPage() {
           <p className="mt-3 text-lg text-amber-700 max-w-2xl mx-auto">
             Thưởng thức hương vị đậm đà với đặt hàng & thanh toán không tiền mặt tiện lợi.
           </p>
-          <p className="mt-4 inline-flex rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-900" aria-live="polite">
-            🛒 Giỏ hàng: {mounted ? cartQuantity : "…"} ly
-          </p>
+          <Link href="/cart" className="mt-4 inline-flex rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100" aria-live="polite">
+            🛒 Giỏ hàng: {mounted ? cartQuantity : "…"} ly →
+          </Link>
         </div>
 
         {/* Loading State */}
@@ -130,4 +130,4 @@ export default function MenuPage() {
       </div>
     </div>
   );
-}
+}

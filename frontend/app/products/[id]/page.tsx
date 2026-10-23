@@ -297,9 +297,9 @@ export default function ProductDetailPage() {
               >
                 {product.stock <= 0 ? "Đã hết hàng" : "Thêm vào giỏ hàng"}
               </button>
-              <p className="mt-3 text-sm text-amber-900">
-                Giỏ hàng: {mounted ? cartQuantity : "…"} ly
-              </p>
+              <Link href="/cart" className="mt-3 inline-block text-sm font-semibold text-amber-900 hover:underline">
+                Giỏ hàng: {mounted ? cartQuantity : "…"} ly → Xem giỏ hàng
+              </Link>
               {cartNotice && (
                 <p role={cartNoticeAdded ? "status" : "alert"} aria-live="polite" className={`mt-2 text-sm font-semibold ${cartNoticeAdded ? "text-green-700" : "text-red-700"}`}>
                   {cartNotice}
@@ -311,4 +311,4 @@ export default function ProductDetailPage() {
       </div>
     </main>
   );
-}
+}
