@@ -73,10 +73,10 @@ export default function Home() {
               Đây là màn hình khởi tạo dự án; menu và đặt hàng sẽ được nhóm phát triển ở các task tiếp theo.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
-              <a href="#status" className="rounded-xl bg-[#654a35] px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#654a35]/15 transition hover:-translate-y-0.5 hover:bg-[#4b3728]">
-                Kiểm tra hệ thống ↗
+              <a href="/menu" className="rounded-xl bg-[#654a35] px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#654a35]/15 transition hover:-translate-y-0.5 hover:bg-[#4b3728]">
+                Xem Menu →
               </a>
-              <a href="https://github.com" target="_blank" rel="noreferrer" className="rounded-xl border border-[#d6c8b5] bg-white/75 px-6 py-3.5 text-sm font-semibold text-[#684d3a] transition hover:bg-white">
+              <a href="https://github.com/TuanEm2/Brewlite" target="_blank" rel="noreferrer" className="rounded-xl border border-[#d6c8b5] bg-white/75 px-6 py-3.5 text-sm font-semibold text-[#684d3a] transition hover:bg-white">
                 GitHub của nhóm ↗
               </a>
             </div>

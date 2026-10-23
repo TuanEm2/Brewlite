@@ -233,7 +233,19 @@ Khi repo đã có `package-lock.json` do TV1 commit, TV2 có thể dùng `npm ci
 
 **TV4 làm tiếp:** trang Menu gọi `${NEXT_PUBLIC_API_URL}/products`, hiển thị hình/tên/giá, có loading và empty state.
 
-## 9. Bàn giao TV3 → TV4 (Task 6 — model đơn hàng)
+## 9. Bàn giao TV4 → TV5 (Task — Trang chi tiết sản phẩm & Tùy chọn)
+
+**TV4 đã làm:**
+- [x] Xây dựng trang Menu gọi API `${NEXT_PUBLIC_API_URL}/products`, hiển thị danh sách hình ảnh, tên, giá món ăn cùng với trạng thái loading và empty state.
+
+**TV5 làm tiếp:**
+- [x] Kế thừa kết quả từ TV4 để phát triển trang chi tiết sản phẩm.
+- [x] Xây dựng giao diện cho phép người dùng chọn size món (S / M / L).
+- [x] Cho phép người dùng chọn thêm các loại topping đi kèm.
+- [x] Tự động tính toán và hiển thị chính xác tổng giá lựa chọn dựa trên giá cơ bản, phụ thu size và topping.
+- [x] Thực hiện commit code và đẩy nhánh lên Git với tên: `feature/tv05`.
+
+## 10. Bàn giao TV3 → TV4 (Task 6 — model đơn hàng)
 
 **TV3 đã làm** (chi tiết, ví dụ JSON và cách kiểm tra trong `docs/SPRINT-02-TASK-06-MODEL.md`):
 
