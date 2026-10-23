@@ -55,3 +55,9 @@ Mỗi CartItem gồm: key, productId, name, imageUrl, basePrice, size {name, pri
 ## Bàn giao GitHub
 
 TV2 đồng bộ code mới nhất của `feature/tv01` vào `feature/tv02` trước khi phát triển. Không push trực tiếp main.
+## Sửa lỗi sau review (TV1)
+
+- Cập nhật generic của Zustand v5: `persist<CartState, [], [], Pick<CartState, "items">>` để `npm run typecheck` không lỗi TS2344.
+- Phân biệt thông báo thêm hàng thành công (xanh) và thất bại (đỏ).
+- Thêm kiểm thử tự động trong `backend/src/cart/cart-store.spec.ts` dùng bộ Jest + ts-jest có sẵn của monorepo; test trực tiếp logic giỏ hàng frontend.
+- Chạy `npm run test`, `npm run typecheck`, `npm run build` trên máy có cài `npm ci` trước khi TV2 bắt đầu.

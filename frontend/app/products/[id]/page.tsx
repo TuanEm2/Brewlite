@@ -41,6 +41,7 @@ export default function ProductDetailPage() {
   const [selectedToppings, setSelectedToppings] = useState<string[]>([]);
   const [retry, setRetry] = useState(0);
   const [cartNotice, setCartNotice] = useState("");
+  const [cartNoticeAdded, setCartNoticeAdded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const addItem = useCartStore((state) => state.addItem);
   const cartQuantity = useCartStore((state) => cartCount(state.items));
@@ -65,6 +66,7 @@ export default function ProductDetailPage() {
       quantity: 1,
     });
     setCartNotice(result.message);
+    setCartNoticeAdded(result.added);
   }
 
   useEffect(() => {
@@ -77,6 +79,7 @@ export default function ProductDetailPage() {
       setSelectedSize("");
       setSelectedToppings([]);
       setCartNotice("");
+      setCartNoticeAdded(false);
 
       try {
         const response = await fetch(
@@ -298,7 +301,7 @@ export default function ProductDetailPage() {
                 Giỏ hàng: {mounted ? cartQuantity : "…"} ly
               </p>
               {cartNotice && (
-                <p role="status" aria-live="polite" className="mt-2 text-sm font-semibold text-green-700">
+                <p role={cartNoticeAdded ? "status" : "alert"} aria-live="polite" className={`mt-2 text-sm font-semibold ${cartNoticeAdded ? "text-green-700" : "text-red-700"}`}>
                   {cartNotice}
                 </p>
               )}

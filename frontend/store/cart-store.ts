@@ -28,7 +28,7 @@ const validMoney = (value: number) => Number.isSafeInteger(value) && value >= 0;
  * products, size, toppings, stock and amounts with NestJS before creating orders.
  */
 export const useCartStore = create<CartState>()(
-  persist<CartState, Pick<CartState, "items">>(
+  persist<CartState, [], [], Pick<CartState, "items">>(
     (set) => ({
       items: [],
       addItem: (input) => {
