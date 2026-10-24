@@ -1,24 +1,123 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAuthStore } from "../../store/auth-store";
 import { useCartStore } from "../../store/cart-store";
 import { cartCount, cartTotal } from "../../store/cart-utils";
 import { describeOptions, formatVnd, lineTotal, maxAllowed } from "../../store/cart-view";
+import {
+  PENDING_CHECKOUT_KEY,
+  cartFingerprint,
+  pendingOrderFor,
+  readSession,
+  writeSession,
+} from "../../store/checkout-utils";
 
 export default function CartPage() {
+  const router = useRouter();
   const items = useCartStore((state) => state.items);
   const setQuantity = useCartStore((state) => state.setQuantity);
   const removeItem = useCartStore((state) => state.removeItem);
   const clearCart = useCartStore((state) => state.clearCart);
 
+  const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
+
   // The cart lives in localStorage, so render it only after hydration on the client.
   const [mounted, setMounted] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [ordering, setOrdering] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+
   useEffect(() => setMounted(true), []);
 
   const drinks = cartCount(items);
   const total = cartTotal(items);
+
+  const apiUrl = (
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
+  ).replace(/\/+$/, "");
+
+  async function handleCreateOrder() {
+    if (!token) {
+      router.push("/login?redirect=/cart");
+      return;
+    }
+
+    // Giỏ này đã có đơn chờ thanh toán (vd: lần trước thanh toán lỗi) → quay lại đúng đơn đó,
+    // không tạo thêm đơn mới. Đổi món/số lượng sẽ tạo đơn mới.
+    const fingerprint = cartFingerprint(items);
+    const pendingOrderId = pendingOrderFor(readSession(PENDING_CHECKOUT_KEY), user?.id, fingerprint);
+    if (pendingOrderId !== null) {
+      router.push(`/checkout/${pendingOrderId}`);
+      return;
+    }
+
+    setOrderError(null);
+    setOrdering(true);
+
+    try {
+      const orderPayload = {
+        items: items.map((item) => ({
+          productId: item.productId,
+          size: item.size.name,
+          toppings: item.toppings.map((t) => t.name),
+          quantity: item.quantity,
+        })),
+      };
+
+      // Lưu khóa theo đúng user + giỏ hiện tại. Khi timeout, retry vẫn cùng key.
+      // Nếu đổi món/số lượng/tài khoản sẽ dùng key mới.
+      const requestFingerprint = JSON.stringify({ userId: user?.id, items: orderPayload.items });
+      const storageKey = "brewlite-create-order-attempt";
+      let existing: { fingerprint: string; key: string } | null = null;
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) existing = JSON.parse(saved) as { fingerprint: string; key: string };
+      } catch { /* trình duyệt có thể chặn sessionStorage */ }
+      const idempotencyKey = existing?.fingerprint === requestFingerprint
+        ? existing.key
+        : crypto.randomUUID();
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify({ fingerprint: requestFingerprint, key: idempotencyKey }));
+      } catch { /* vẫn gửi key trong yêu cầu hiện tại */ }
+
+      const res = await fetch(`${apiUrl}/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ...orderPayload, idempotencyKey }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          router.push("/login?redirect=/cart");
+          throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        }
+        if (res.status === 409) {
+          throw new Error(data.message || "Sản phẩm trong giỏ đã vượt quá tồn kho.");
+        }
+        throw new Error(data.message || "Không thể tạo đơn hàng.");
+      }
+
+      try { sessionStorage.removeItem(storageKey); } catch { /* no storage */ }
+      // KHÔNG xóa giỏ ở đây: đơn mới ở PENDING. Giỏ chỉ được xóa khi thanh toán thành công
+      // (US-05: thanh toán lỗi thì giỏ hàng được giữ nguyên).
+      const orderId = (data as { id: number }).id;
+      if (user) writeSession(PENDING_CHECKOUT_KEY, { orderId, userId: user.id, fingerprint });
+      router.push(`/checkout/${orderId}`);
+    } catch (err: unknown) {
+      setOrderError(err instanceof Error ? err.message : "Đã có lỗi xảy ra.");
+    } finally {
+      setOrdering(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-amber-50 px-4 py-8">
@@ -56,6 +155,15 @@ export default function CartPage() {
         {mounted && items.length > 0 && (
           <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_18rem]">
             <section aria-label="Danh sách món trong giỏ" className="space-y-4">
+              {orderError && (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                >
+                  {orderError}
+                </div>
+              )}
+
               {items.map((item) => {
                 const max = maxAllowed(item);
                 return (
@@ -162,7 +270,7 @@ export default function CartPage() {
             </section>
 
             <aside className="h-fit rounded-2xl border border-amber-100 bg-white p-5 shadow-sm lg:sticky lg:top-6">
-              <h2 className="text-lg font-bold text-gray-900">Tóm tắt</h2>
+              <h2 className="text-lg font-bold text-gray-900">Tóm tắt đơn hàng</h2>
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-gray-600">Số ly</dt>
@@ -175,16 +283,33 @@ export default function CartPage() {
                   </dd>
                 </div>
               </dl>
-              <button
-                type="button"
-                disabled
-                title="Đặt hàng và thanh toán được nối ở Task 6–8"
-                className="mt-5 w-full rounded-xl bg-gray-400 px-5 py-3 font-bold text-white disabled:cursor-not-allowed"
-              >
-                Thanh toán {formatVnd(total)}
-              </button>
-              <p className="mt-2 text-xs text-gray-500">
-                Đặt hàng và thanh toán sẽ được nối ở các task tiếp theo. Giá sẽ được kiểm tra lại khi đặt hàng.
+
+              {token ? (
+                <button
+                  type="button"
+                  onClick={handleCreateOrder}
+                  disabled={ordering}
+                  className="mt-5 w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white shadow transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-gray-400"
+                >
+                  {ordering ? "Đang tạo đơn hàng..." : `Thanh toán (${formatVnd(total)})`}
+                </button>
+              ) : (
+                <div className="mt-5 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/login?redirect=/cart")}
+                    className="w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white shadow transition hover:bg-amber-900"
+                  >
+                    Đăng nhập để thanh toán
+                  </button>
+                  <p className="text-center text-xs text-amber-800">
+                    Chưa đăng nhập? Bạn sẽ được chuyển sang đăng nhập trước khi tạo đơn.
+                  </p>
+                </div>
+              )}
+
+              <p className="mt-3 text-xs text-gray-500">
+                Bấm Thanh toán để tạo đơn (PENDING) rồi chọn Ví hoặc Thẻ. Giá và tồn kho được hệ thống kiểm tra lại; giỏ hàng chỉ được xóa khi thanh toán thành công.
               </p>
             </aside>
           </div>

@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ProductsModule } from '../products/products.module';
+import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
-// Chưa có controller: `POST /orders` là phần của TV4 (Task 6 – API), dùng OrdersService.createPending.
 @Module({
-  imports: [ProductsModule],
+  imports: [ProductsModule, AuthModule],
+  controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],
 })

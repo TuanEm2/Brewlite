@@ -62,6 +62,7 @@ model Order {
   user           User?       @relation(fields: [userId], references: [id])
   items          OrderItem[]
   payment        Payment?
+  paymentAttempts PaymentAttempt[]
 }
 
 /// Một dòng trong đơn. Lưu giá và lựa chọn tại thời điểm đặt, không phụ thuộc giá sản phẩm sau này.
@@ -89,4 +90,19 @@ model Payment {
   method         String
   createdAt      DateTime @default(now())
   order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+/// Ghi cả các lần thanh toán mô phỏng thành công và thất bại,
+/// bảo đảm một idempotencyKey chỉ được xử lý một lần.
+model PaymentAttempt {
+  id             Int      @id @default(autoincrement())
+  orderId        Int
+  idempotencyKey String   @unique
+  amount         Int
+  method         String
+  outcome        String
+  createdAt      DateTime @default(now())
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }

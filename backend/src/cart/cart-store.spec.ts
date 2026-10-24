@@ -1,9 +1,9 @@
+import type { AddToCartInput } from '../../../frontend/store/cart-utils';
 import {
   cartCount,
   cartKey,
   cartTotal,
   unitPrice,
-  type AddToCartInput,
 } from '../../../frontend/store/cart-utils';
 
 /**

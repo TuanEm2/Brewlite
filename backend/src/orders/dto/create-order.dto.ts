@@ -6,6 +6,8 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsOptional,
+  IsUUID,
   IsNotEmpty,
   IsString,
   Max,
@@ -51,4 +53,9 @@ export class CreateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
   items!: CreateOrderItemDto[];
+
+  /** Cùng khóa khi retry cùng giỏ hàng để tránh tạo đơn trùng. */
+  @IsOptional()
+  @IsUUID('4')
+  idempotencyKey?: string;
 }
