@@ -92,9 +92,18 @@ describe('OrdersService.createPending (integration)', () => {
     expect(saved.items).toHaveLength(2);
   });
 
-  it('không trừ tồn kho (trừ kho thuộc Task 10)', async () => {
-    const product = await prisma.product.findUniqueOrThrow({ where: { id: productIds[0] } });
-    expect(product.stock).toBe(5);
+    it('trừ đúng tồn kho khi tạo đơn PENDING', async () => {
+    const coffee = await prisma.product.findUniqueOrThrow({
+      where: { id: productIds[0] },
+    });
+    const tea = await prisma.product.findUniqueOrThrow({
+      where: { id: productIds[1] },
+    });
+
+    expect(coffee.stock).toBe(3);
+    expect(tea.stock).toBe(1);
+    expect(coffee.version).toBe(1);
+    expect(tea.version).toBe(1);
   });
 
   it('404 khi có sản phẩm không tồn tại, không tạo đơn', async () => {

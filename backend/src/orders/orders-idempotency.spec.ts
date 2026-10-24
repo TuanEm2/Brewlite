@@ -34,13 +34,39 @@ describe('CreateOrder idempotency — Sprint 3 TV1', () => {
   let findUnique: jest.Mock;
   let create: jest.Mock;
   let findManyByIds: jest.Mock;
+  let productFindMany: jest.Mock;
+  let productUpdateMany: jest.Mock;
 
   beforeEach(() => {
     findUnique = jest.fn().mockResolvedValue({ ...oldOrder });
     create = jest.fn().mockResolvedValue({ ...oldOrder });
+    productFindMany = jest.fn().mockResolvedValue([{
+      id: 3,
+      name: 'Cappuccino',
+      price: 45000,
+      stock: 10,
+      version: 0,
+      sizes: [{ name: 'L', price: 10000 }],
+      toppings: [{ name: 'Kem', price: 10000 }],
+    }]);
+    productUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
     findManyByIds = jest.fn().mockResolvedValue([{ id: 3, name: 'Cappuccino', price: 45000,
       stock: 10, sizes: [{ name: 'L', price: 10000 }], toppings: [{ name: 'Kem', price: 10000 }] }]);
-    const prisma = { order: { findUnique, create } } as unknown as PrismaService;
+    
+    // Đã bổ sung đầy đủ mock cho product.updateMany và product.findMany trong transaction tx
+    const mockPrismaClient = {
+      order: { findUnique, create },
+      product: {
+        findMany: productFindMany,
+        updateMany: productUpdateMany,
+      },
+    };
+    
+    const prisma = {
+      ...mockPrismaClient,
+      $transaction: jest.fn(async (callback) => callback(mockPrismaClient)),
+    } as unknown as PrismaService;
+
     const products = { findManyByIds } as unknown as ProductsService;
     service = new OrdersService(prisma, products);
   });

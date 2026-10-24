@@ -80,20 +80,18 @@ export class OrdersService {
 
   /**
    * Tạo đơn ở trạng thái PENDING từ giỏ hàng đã validate (CreateOrderDto).
-   * Giá luôn tính lại từ CSDL. Chỉ kiểm tra tồn kho, không trừ kho:
-   * trừ kho có khóa lạc quan thuộc Task 10 (TV4).
+   * Giá luôn tính lại từ CSDL. Trừ kho đồng thời sử dụng Transaction kết hợp Optimistic Locking (Task 10 - TV4).
    *
    * @param userId id người đặt; `null` khi chưa có Auth (Task 7).
    * @throws NotFoundException khi có sản phẩm không tồn tại (404)
    * @throws BadRequestException khi size/topping không thuộc sản phẩm (400)
-   * @throws ConflictException khi số lượng vượt tồn kho (409)
+   * @throws ConflictException khi số lượng vượt tồn kho hoặc xung đột đồng thời (409)
    */
   async createPending(
     userId: number | null,
     dto: CreateOrderDto,
   ): Promise<OrderResponseDto> {
     // Nếu phía client bị timeout sau khi server đã tạo đơn, trả lại đơn cũ.
-    // Chặn việc dùng lại cùng khóa cho giỏ hàng khác hoặc người dùng khác.
     if (dto.idempotencyKey) {
       const previous = await this.prisma.order.findUnique({
         where: { idempotencyKey: dto.idempotencyKey },
@@ -103,60 +101,90 @@ export class OrdersService {
     }
 
     const productIds = [...new Set(dto.items.map((item) => item.productId))];
-    const products = new Map(
-      (await this.productsService.findManyByIds(productIds)).map((p) => [p.id, p]),
-    );
 
-    const missing = productIds.filter((id) => !products.has(id));
-    if (missing.length > 0) {
-      throw new NotFoundException(
-        `Không tìm thấy sản phẩm có id ${missing.join(', ')}`,
-      );
-    }
-
-    // Cùng một sản phẩm có thể nằm ở nhiều dòng (khác size/topping): cộng dồn trước khi so tồn kho.
-    const requested = new Map<number, number>();
-    for (const item of dto.items) {
-      requested.set(item.productId, (requested.get(item.productId) ?? 0) + item.quantity);
-    }
-    for (const [productId, quantity] of requested) {
-      const product = products.get(productId)!;
-      if (quantity > product.stock) {
-        throw new ConflictException(
-          `"${product.name}" chỉ còn ${product.stock}, không đủ ${quantity}`,
-        );
-      }
-    }
-
-    const lines = dto.items.map((item) =>
-      priceLine(products.get(item.productId)!, item.size, item.toppings, item.quantity),
-    );
-
-    // Tạo lồng nhau: Prisma ghi Order và mọi OrderItem trong cùng một transaction.
     let order: OrderWithItems;
     try {
-      order = await this.prisma.order.create({
-      data: {
-        userId,
-        idempotencyKey: dto.idempotencyKey,
-        status: OrderStatus.PENDING,
-        total: orderTotal(lines),
-        items: {
-          create: lines.map((line) => ({
-            productId: line.productId,
-            size: line.size,
-            toppings: line.toppings as unknown as Prisma.InputJsonValue,
-            qty: line.quantity,
-            unitPrice: line.unitPrice,
-            lineTotal: line.lineTotal,
-          })),
-        },
-      },
-      include: ORDER_INCLUDE,
+      order = await this.prisma.$transaction(async (tx) => {
+        const products = new Map(
+          (await tx.product.findMany({
+            where: { id: { in: productIds } },
+          })).map((p) => [p.id, p]),
+        );
+
+        const missing = productIds.filter((id) => !products.has(id));
+        if (missing.length > 0) {
+          throw new NotFoundException(
+            `Không tìm thấy sản phẩm có id ${missing.join(', ')}`,
+          );
+        }
+
+        // Cùng một sản phẩm có thể nằm ở nhiều dòng (khác size/topping): cộng dồn trước khi so tồn kho.
+        const requested = new Map<number, number>();
+        for (const item of dto.items) {
+          requested.set(item.productId, (requested.get(item.productId) ?? 0) + item.quantity);
+        }
+
+        // Kiểm tra tồn kho và trừ kho bằng Optimistic Locking (Task 10 - TV4)
+        for (const [productId, quantity] of requested) {
+          const product = products.get(productId)!;
+          if (quantity > product.stock) {
+            throw new ConflictException(
+              `"${product.name}" chỉ còn ${product.stock}, không đủ ${quantity}`,
+            );
+          }
+
+          const updateResult = await tx.product.updateMany({
+            where: {
+              id: product.id,
+              version: product.version, // Khóa lạc quan kiểm tra version
+              stock: { gte: quantity },
+            },
+            data: {
+              stock: { decrement: quantity },
+              version: { increment: 1 }, // Tăng version để ngăn chặn ghi đè đồng thời
+            },
+          });
+
+          if (updateResult.count === 0) {
+            throw new ConflictException(
+              `Xung đột tồn kho đối với sản phẩm "${product.name}" do có đơn hàng đồng thời. Vui lòng thử lại!`,
+            );
+          }
+        }
+
+        // Lấy lại sản phẩm đã được cập nhật kho để tính giá chính xác
+        const freshProducts = new Map(
+          (await tx.product.findMany({
+            where: { id: { in: productIds } },
+          })).map((p) => [p.id, p]),
+        );
+
+        const lines = dto.items.map((item) =>
+          priceLine(freshProducts.get(item.productId) as any, item.size, item.toppings, item.quantity),
+        );
+
+        // Tạo Order và OrderItem trong cùng transaction
+        return await tx.order.create({
+          data: {
+            userId,
+            idempotencyKey: dto.idempotencyKey,
+            status: OrderStatus.PENDING,
+            total: orderTotal(lines),
+            items: {
+              create: lines.map((line) => ({
+                productId: line.productId,
+                size: line.size,
+                toppings: line.toppings as unknown as Prisma.InputJsonValue,
+                qty: line.quantity,
+                unitPrice: line.unitPrice,
+                lineTotal: line.lineTotal,
+              })),
+            },
+          },
+          include: ORDER_INCLUDE,
+        });
       });
     } catch (error: unknown) {
-      // Hai POST đồng thời dùng cùng key: unique index cho phép chỉ 1 bản ghi.
-      // Sau khi request kia commit, trả lại kết quả cũ nếu payload giống nhau.
       if (dto.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const previous = await this.prisma.order.findUnique({
           where: { idempotencyKey: dto.idempotencyKey },
@@ -166,6 +194,7 @@ export class OrdersService {
       }
       throw error;
     }
+
     return toResponse(order);
   }
 }
