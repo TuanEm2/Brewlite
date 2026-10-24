@@ -7,25 +7,13 @@ import { useAuthStore } from "../../store/auth-store";
 import { useCartStore } from "../../store/cart-store";
 import { cartCount, cartTotal } from "../../store/cart-utils";
 import { describeOptions, formatVnd, lineTotal, maxAllowed } from "../../store/cart-view";
-
-interface CreatedOrderItem {
-  id: number;
-  productId: number;
-  size: string;
-  toppings: Array<{ name: string; price: number }>;
-  quantity: number;
-  unitPrice: number;
-  lineTotal: number;
-}
-
-interface CreatedOrder {
-  id: number;
-  status: string;
-  total: number;
-  discount: number;
-  createdAt: string;
-  items: CreatedOrderItem[];
-}
+import {
+  PENDING_CHECKOUT_KEY,
+  cartFingerprint,
+  pendingOrderFor,
+  readSession,
+  writeSession,
+} from "../../store/checkout-utils";
 
 export default function CartPage() {
   const router = useRouter();
@@ -42,7 +30,6 @@ export default function CartPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [ordering, setOrdering] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
-  const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -56,6 +43,15 @@ export default function CartPage() {
   async function handleCreateOrder() {
     if (!token) {
       router.push("/login?redirect=/cart");
+      return;
+    }
+
+    // Giỏ này đã có đơn chờ thanh toán (vd: lần trước thanh toán lỗi) → quay lại đúng đơn đó,
+    // không tạo thêm đơn mới. Đổi món/số lượng sẽ tạo đơn mới.
+    const fingerprint = cartFingerprint(items);
+    const pendingOrderId = pendingOrderFor(readSession(PENDING_CHECKOUT_KEY), user?.id, fingerprint);
+    if (pendingOrderId !== null) {
+      router.push(`/checkout/${pendingOrderId}`);
       return;
     }
 
@@ -110,9 +106,12 @@ export default function CartPage() {
         throw new Error(data.message || "Không thể tạo đơn hàng.");
       }
 
-      setCreatedOrder(data as CreatedOrder);
       try { sessionStorage.removeItem(storageKey); } catch { /* no storage */ }
-      clearCart();
+      // KHÔNG xóa giỏ ở đây: đơn mới ở PENDING. Giỏ chỉ được xóa khi thanh toán thành công
+      // (US-05: thanh toán lỗi thì giỏ hàng được giữ nguyên).
+      const orderId = (data as { id: number }).id;
+      if (user) writeSession(PENDING_CHECKOUT_KEY, { orderId, userId: user.id, fingerprint });
+      router.push(`/checkout/${orderId}`);
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : "Đã có lỗi xảy ra.");
     } finally {
@@ -135,75 +134,7 @@ export default function CartPage() {
           </p>
         )}
 
-        {/* Màn hình thông báo khi vừa tạo đơn thành công (PENDING) */}
-        {mounted && createdOrder && (
-          <section className="mt-8 rounded-2xl border border-green-200 bg-white p-8 shadow-sm">
-            <div className="flex items-center gap-3 text-green-700">
-              <span className="text-3xl" aria-hidden="true">✓</span>
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Tạo đơn hàng thành công!
-                </h2>
-                <p className="text-sm font-semibold text-amber-800">
-                  Mã đơn: #{createdOrder.id} • Trạng thái:{" "}
-                  <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-900">
-                    {createdOrder.status}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-4 text-sm text-gray-600">
-              Đơn hàng của bạn đã được tiếp nhận ở trạng thái{" "}
-              <strong>PENDING</strong> và có thể chuyển sang bước thanh toán mô phỏng. Không thu tiền thật.
-            </p>
-
-            <div className="mt-6 rounded-xl bg-amber-50/60 p-4">
-              <h3 className="font-bold text-amber-950">Chi tiết đơn hàng:</h3>
-              <ul className="mt-2 divide-y divide-amber-100 text-sm">
-                {createdOrder.items.map((item) => (
-                  <li key={item.id} className="flex justify-between py-2">
-                    <span>
-                      {item.quantity}x Sản phẩm #{item.productId} (Size {item.size}
-                      {item.toppings.length > 0 &&
-                        `, Topping: ${item.toppings.map((t) => t.name).join(", ")}`}
-                      )
-                    </span>
-                    <span className="font-bold">{formatVnd(item.lineTotal)}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-3 flex justify-between border-t border-amber-200 pt-2 font-bold text-amber-900">
-                <span>Tổng cộng:</span>
-                <span className="text-lg">{formatVnd(createdOrder.total)}</span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap gap-4">
-              <Link
-                href={`/checkout/${createdOrder.id}`}
-                className="rounded-xl bg-green-700 px-6 py-3 font-bold text-white transition hover:bg-green-800"
-              >
-                Thanh toán mô phỏng →
-              </Link>
-              <Link
-                href="/menu"
-                className="rounded-xl bg-amber-800 px-6 py-3 font-bold text-white transition hover:bg-amber-900"
-              >
-                Đặt thêm đồ uống
-              </Link>
-              <button
-                type="button"
-                onClick={() => setCreatedOrder(null)}
-                className="rounded-xl border border-gray-300 px-5 py-3 font-semibold text-gray-700 transition hover:bg-gray-100"
-              >
-                Đóng thông báo
-              </button>
-            </div>
-          </section>
-        )}
-
-        {mounted && !createdOrder && items.length === 0 && (
+        {mounted && items.length === 0 && (
           <section className="mt-8 rounded-2xl border border-amber-100 bg-white p-10 text-center shadow-sm">
             <p className="text-5xl" aria-hidden="true">
               ☕
@@ -221,7 +152,7 @@ export default function CartPage() {
           </section>
         )}
 
-        {mounted && !createdOrder && items.length > 0 && (
+        {mounted && items.length > 0 && (
           <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_18rem]">
             <section aria-label="Danh sách món trong giỏ" className="space-y-4">
               {orderError && (
@@ -360,7 +291,7 @@ export default function CartPage() {
                   disabled={ordering}
                   className="mt-5 w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white shadow transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-gray-400"
                 >
-                  {ordering ? "Đang tạo đơn hàng..." : `Đặt hàng (${formatVnd(total)})`}
+                  {ordering ? "Đang tạo đơn hàng..." : `Thanh toán (${formatVnd(total)})`}
                 </button>
               ) : (
                 <div className="mt-5 space-y-2">
@@ -369,7 +300,7 @@ export default function CartPage() {
                     onClick={() => router.push("/login?redirect=/cart")}
                     className="w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white shadow transition hover:bg-amber-900"
                   >
-                    Đăng nhập để đặt hàng
+                    Đăng nhập để thanh toán
                   </button>
                   <p className="text-center text-xs text-amber-800">
                     Chưa đăng nhập? Bạn sẽ được chuyển sang đăng nhập trước khi tạo đơn.
@@ -378,7 +309,7 @@ export default function CartPage() {
               )}
 
               <p className="mt-3 text-xs text-gray-500">
-                Đơn hàng được lưu ở trạng thái PENDING. Giá sản phẩm và tồn kho sẽ được kiểm tra lại bởi hệ thống.
+                Bấm Thanh toán để tạo đơn (PENDING) rồi chọn Ví hoặc Thẻ. Giá và tồn kho được hệ thống kiểm tra lại; giỏ hàng chỉ được xóa khi thanh toán thành công.
               </p>
             </aside>
           </div>
