@@ -72,13 +72,29 @@ export default function CartPage() {
         })),
       };
 
+      // Lưu khóa theo đúng user + giỏ hiện tại. Khi timeout, retry vẫn cùng key.
+      // Nếu đổi món/số lượng/tài khoản sẽ dùng key mới.
+      const requestFingerprint = JSON.stringify({ userId: user?.id, items: orderPayload.items });
+      const storageKey = "brewlite-create-order-attempt";
+      let existing: { fingerprint: string; key: string } | null = null;
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved) existing = JSON.parse(saved) as { fingerprint: string; key: string };
+      } catch { /* trình duyệt có thể chặn sessionStorage */ }
+      const idempotencyKey = existing?.fingerprint === requestFingerprint
+        ? existing.key
+        : crypto.randomUUID();
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify({ fingerprint: requestFingerprint, key: idempotencyKey }));
+      } catch { /* vẫn gửi key trong yêu cầu hiện tại */ }
+
       const res = await fetch(`${apiUrl}/orders`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(orderPayload),
+        body: JSON.stringify({ ...orderPayload, idempotencyKey }),
       });
 
       const data = await res.json();
@@ -95,6 +111,7 @@ export default function CartPage() {
       }
 
       setCreatedOrder(data as CreatedOrder);
+      try { sessionStorage.removeItem(storageKey); } catch { /* no storage */ }
       clearCart();
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : "Đã có lỗi xảy ra.");
@@ -138,7 +155,7 @@ export default function CartPage() {
 
             <p className="mt-4 text-sm text-gray-600">
               Đơn hàng của bạn đã được tiếp nhận ở trạng thái{" "}
-              <strong>PENDING</strong> và chờ thanh toán không tiền mặt (Sprint 3).
+              <strong>PENDING</strong> và có thể chuyển sang bước thanh toán mô phỏng. Không thu tiền thật.
             </p>
 
             <div className="mt-6 rounded-xl bg-amber-50/60 p-4">
@@ -163,6 +180,12 @@ export default function CartPage() {
             </div>
 
             <div className="mt-6 flex flex-wrap gap-4">
+              <Link
+                href={`/checkout/${createdOrder.id}`}
+                className="rounded-xl bg-green-700 px-6 py-3 font-bold text-white transition hover:bg-green-800"
+              >
+                Thanh toán mô phỏng →
+              </Link>
               <Link
                 href="/menu"
                 className="rounded-xl bg-amber-800 px-6 py-3 font-bold text-white transition hover:bg-amber-900"

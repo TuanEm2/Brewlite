@@ -1,4 +1,6 @@
-# BrewLite ☕ | Software Engineering — Sprint 1 / Task 1–2
+# BrewLite ☕ | Software Engineering — Sprint 1–2 + Sprint 3 TV1
+
+> **Cập nhật Sprint 3 (TV1):** Source tích hợp Sprint 1–2; TV1 bổ sung Mock Payment, idempotency và trang thanh toán thử. Xem hướng dẫn **`docs/SPRINT-03-TASK-08-TV1.md`**. Các checklist Sprint 1 bên dưới là tài liệu lịch sử, có thể chưa được cập nhật. **Không chạy seed/reset trên PostgreSQL có dữ liệu cần giữ.**
 
 BrewLite là dự án **ứng dụng đặt đồ uống, thanh toán không tiền mặt** của nhóm môn Công nghệ Phần mềm. Dự án sử dụng **Next.js (frontend)** và **NestJS (backend)** theo yêu cầu của đề bài. Hiện có **nền tảng dự án (TV1, Task 1)** và **cơ sở dữ liệu PostgreSQL + Prisma (TV2, Task 2)**; đây chưa phải ứng dụng đặt hàng hoàn chỉnh.
 
