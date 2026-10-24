@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { paymentTransitionPath } from '../orders/order-state';
 import { PrismaService } from '../prisma/prisma.service';
 import { MockPaymentDto } from './dto/mock-payment.dto';
 
@@ -62,9 +63,11 @@ export class PaymentsService {
         if (order.status === OrderStatus.PAID || await tx.payment.findUnique({ where: { orderId: order.id } })) {
           throw new ConflictException('Đơn hàng đã thanh toán.');
         }
-        if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED) {
-          throw new ConflictException(`Không thể thanh toán đơn ở trạng thái ${order.status}.`);
-        }
+
+        // Task 10 (TV3): đổi trạng thái qua máy trạng thái. PAYMENT_FAILED đi "thử lại" về PENDING
+        // rồi mới tới đích; trạng thái khác (CANCELLED, PREPARING…) bị chặn với 409.
+        const target = dto.outcome === 'SUCCESS' ? OrderStatus.PAID : OrderStatus.PAYMENT_FAILED;
+        paymentTransitionPath(order.status, target);
 
         if (dto.outcome === 'SUCCESS') {
           await tx.payment.create({
@@ -75,16 +78,13 @@ export class PaymentsService {
               method: dto.method,
             },
           });
-          await tx.order.update({
-            where: { id: order.id },
-            data: { status: OrderStatus.PAID },
-          });
-        } else {
-          await tx.order.update({
-            where: { id: order.id },
-            data: { status: OrderStatus.PAYMENT_FAILED },
-          });
         }
+        // Đơn đang bị khóa FOR UPDATE: bước "thử lại" về PENDING (đã kiểm tra ở trên) và bước đích
+        // nằm trong cùng transaction, nên chỉ cần ghi trạng thái đích.
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: target },
+        });
 
         await tx.paymentAttempt.create({
           data: {

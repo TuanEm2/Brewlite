@@ -104,6 +104,7 @@ BrewLite/
 │   ├── SPRINT-01-TASK-02.md
 │   ├── SPRINT-01-TASK-02-API.md
 │   ├── SPRINT-02-TASK-06-MODEL.md
+│   ├── SPRINT-03-TASK-10-STATE-MACHINE.md
 │   └── GIT-WORKFLOW.md
 ├── frontend/
 │   ├── app/
@@ -259,3 +260,14 @@ Khi repo đã có `package-lock.json` do TV1 commit, TV2 có thể dùng `npm ci
 Sau khi merge: `npm install` rồi `npm run prisma:deploy -w @brewlite/backend`.
 
 **TV4 làm tiếp:** `POST /orders` gọi `OrdersService.createPending`, bật `ValidationPipe`, trả mã đơn và trạng thái `PENDING`.
+
+## 11. Bàn giao TV3 → TV4, TV5 (Task 10 — Order State Machine)
+
+**TV3 đã làm** (sơ đồ, quy tắc và cách kiểm tra trong `docs/SPRINT-03-TASK-10-STATE-MACHINE.md`):
+
+- [x] `backend/src/orders/order-state.ts`: bảng chuyển trạng thái đúng mục 9.1 của đề, `assertTransition` chặn chuyển sai (409); `COMPLETED`, `CANCELLED` là trạng thái kết thúc.
+- [x] `OrdersService.changeStatus`: đổi sang `PREPARING`, `READY`, `COMPLETED`, `CANCELLED`, chống ghi đè khi hai yêu cầu cùng lúc.
+- [x] Refactor thanh toán của TV1: mọi thay đổi `PAID`/`PAYMENT_FAILED` đi qua máy trạng thái; đơn `PAYMENT_FAILED` thử lại về `PENDING` theo sơ đồ.
+- [x] 67 unit test (đủ 49 cặp trạng thái) và 11 integration test trên PostgreSQL.
+
+**TV4, TV5 làm tiếp:** trừ tồn kho (TV4) và cộng điểm loyalty chỉ khi đơn sang `PAID` (TV5), dùng `assertTransition`/`changeStatus` khi đổi trạng thái.

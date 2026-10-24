@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -9,9 +10,16 @@ import { PricedOption } from '../products/dto/product-response.dto';
 import { ProductsService } from '../products/products.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
+import { assertTransition } from './order-state';
 import { orderTotal, priceLine } from './pricing';
 
 const ORDER_INCLUDE = { items: { orderBy: { id: 'asc' } } } satisfies Prisma.OrderInclude;
+// Chỉ PaymentsService được ghi các trạng thái này, để không thể "đánh dấu đã trả tiền" mà không thanh toán.
+const PAYMENT_ONLY_STATUSES: readonly OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.PAID,
+  OrderStatus.PAYMENT_FAILED,
+];
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
 @Injectable()
@@ -28,6 +36,45 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
     if (!order) throw new NotFoundException('Không tìm thấy đơn hàng.');
+    return toResponse(order);
+  }
+
+  /**
+   * Đổi trạng thái đơn qua máy trạng thái (Task 10), ví dụ PAID → PREPARING → READY → COMPLETED
+   * hoặc hủy. Thanh toán (PAID / PAYMENT_FAILED) do PaymentsService xử lý.
+   *
+   * Cập nhật có điều kiện `status = trạng thái vừa đọc`: nếu một yêu cầu khác đổi trạng thái
+   * xen giữa thì không ghi đè mà báo 409.
+   *
+   * @throws BadRequestException khi đích là PENDING/PAID/PAYMENT_FAILED: chỉ thanh toán mới được đặt (400)
+   * @throws NotFoundException khi đơn không tồn tại (404)
+   * @throws InvalidOrderTransitionException khi chuyển tiếp không có trong sơ đồ (409)
+   * @throws ConflictException khi trạng thái vừa bị yêu cầu khác thay đổi (409)
+   */
+  async changeStatus(orderId: number, to: OrderStatus): Promise<OrderResponseDto> {
+    if (PAYMENT_ONLY_STATUSES.includes(to)) {
+      throw new BadRequestException(
+        `Trạng thái ${to} chỉ được đặt qua thanh toán (POST /payments/mock).`,
+      );
+    }
+    const current = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true },
+    });
+    if (!current) throw new NotFoundException('Không tìm thấy đơn hàng.');
+    assertTransition(current.status, to);
+
+    const { count } = await this.prisma.order.updateMany({
+      where: { id: orderId, status: current.status },
+      data: { status: to },
+    });
+    if (count === 0) {
+      throw new ConflictException('Trạng thái đơn vừa được cập nhật bởi yêu cầu khác, hãy tải lại.');
+    }
+    const order = await this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ORDER_INCLUDE,
+    });
     return toResponse(order);
   }
 
