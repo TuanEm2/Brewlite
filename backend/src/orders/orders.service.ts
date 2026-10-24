@@ -12,6 +12,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
 import { assertTransition } from './order-state';
 import { orderTotal, priceLine } from './pricing';
+import { applyVoucher } from './voucher';
 
 const ORDER_INCLUDE = { items: { orderBy: { id: 'asc' } } } satisfies Prisma.OrderInclude;
 // Chỉ PaymentsService được ghi các trạng thái này, để không thể "đánh dấu đã trả tiền" mà không thanh toán.
@@ -28,6 +29,19 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly productsService: ProductsService,
   ) {}
+
+  async findMyOrders(userId: number): Promise<OrderResponseDto[]> {
+    const orders = await this.prisma.order.findMany({
+      where: { userId },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      include: ORDER_INCLUDE,
+    });
+
+    return orders.map(toResponse);
+  }
 
   /** Lấy đơn theo id, chỉ trả đơn do người dùng hiện tại sở hữu. */
   async findOwnedOrder(userId: number, orderId: number): Promise<OrderResponseDto> {
@@ -163,13 +177,20 @@ export class OrdersService {
           priceLine(freshProducts.get(item.productId) as any, item.size, item.toppings, item.quantity),
         );
 
+        const promotion = applyVoucher(
+          orderTotal(lines),
+          dto.voucherCode,
+        );
+
         // Tạo Order và OrderItem trong cùng transaction
         return await tx.order.create({
           data: {
             userId,
             idempotencyKey: dto.idempotencyKey,
             status: OrderStatus.PENDING,
-            total: orderTotal(lines),
+            total: promotion.total,
+            discount: promotion.discount,
+            voucherCode: promotion.voucherCode,
             items: {
               create: lines.map((line) => ({
                 productId: line.productId,
@@ -204,6 +225,15 @@ function replayExistingOrder(
   userId: number | null,
   dto: CreateOrderDto,
 ): OrderResponseDto {
+  const requestedVoucher = dto.voucherCode === undefined
+    ? null
+    : dto.voucherCode.trim().toUpperCase();
+
+  if ((previous.voucherCode ?? null) !== requestedVoucher) {
+    throw new ConflictException(
+      'Idempotency key đã được sử dụng với mã giảm giá khác.',
+    );
+  }
   if (previous.userId !== userId || canonicalItems(previous.items.map((item) => ({
     productId: item.productId,
     size: item.size,
@@ -229,6 +259,7 @@ function toResponse(order: OrderWithItems): OrderResponseDto {
     status: order.status,
     total: order.total,
     discount: order.discount,
+    voucherCode: order.voucherCode ?? null,
     createdAt: order.createdAt,
     items: order.items.map((item) => ({
       id: item.id,

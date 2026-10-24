@@ -19,4 +19,5 @@ export interface OrderResponseDto {
   discount: number;
   createdAt: Date;
   items: OrderItemResponseDto[];
+  voucherCode: string | null;
 }

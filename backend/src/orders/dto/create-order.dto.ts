@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -13,6 +13,8 @@ import {
   Max,
   Min,
   ValidateNested,
+  ValidateIf,
+  MaxLength,
 } from 'class-validator';
 
 export const SIZE_NAMES = ['S', 'M', 'L'] as const;
@@ -58,4 +60,13 @@ export class CreateOrderDto {
   @IsOptional()
   @IsUUID('4')
   idempotencyKey?: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(32)
+  voucherCode?: string;
 }

@@ -20,16 +20,63 @@ describe('PaymentsService — Mock Payment + Idempotency (Sprint 3 TV1)', () => 
   let payments: Array<{ orderId: number; idempotencyKey: string; amount: number; method: string }>;
   let tx: {
     $queryRaw: jest.Mock;
+    user: { update: jest.Mock };
     order: { findUniqueOrThrow: jest.Mock; update: jest.Mock };
     payment: { findUnique: jest.Mock; create: jest.Mock };
     paymentAttempt: { findUnique: jest.Mock; create: jest.Mock };
   };
+  it('cộng điểm sau khi đơn PAID, dựa trên tổng thực trả', async () => {
+    order.total = 63000;
+
+    tx.user.update.mockImplementation(async () => {
+      expect(order.status).toBe(OrderStatus.PAID);
+      return {};
+    });
+
+    await service.mockPayment(7, dto());
+
+    expect(tx.user.update).toHaveBeenCalledTimes(1);
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: {
+        loyaltyPoints: { increment: 6 },
+      },
+    });
+  });
+
+  it('không cộng điểm khi thanh toán thất bại hoặc replay thất bại', async () => {
+    await service.mockPayment(7, dto(KEY1, 'FAILURE'));
+    await service.mockPayment(7, dto(KEY1, 'FAILURE'));
+
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('không cộng điểm lần hai khi replay hoặc đổi key sau PAID', async () => {
+    await service.mockPayment(7, dto(KEY1));
+    await service.mockPayment(7, dto(KEY1));
+
+    await expect(service.mockPayment(7, dto(KEY2)))
+      .rejects.toBeInstanceOf(ConflictException);
+
+    expect(tx.user.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('thất bại rồi thử lại thành công chỉ cộng điểm một lần', async () => {
+    await service.mockPayment(7, dto(KEY1, 'FAILURE'));
+    expect(tx.user.update).not.toHaveBeenCalled();
+
+    await service.mockPayment(7, dto(KEY2, 'SUCCESS'));
+    expect(tx.user.update).toHaveBeenCalledTimes(1);
+  });
 
   beforeEach(() => {
     order = { id: 42, userId: 7, total: 65000, status: OrderStatus.PENDING };
     attempts = [];
     payments = [];
     tx = {
+      user: {
+        update: jest.fn().mockResolvedValue({}),
+      },
       $queryRaw: jest.fn().mockImplementation(async (...params: unknown[]) => {
         // Mock the ownership check used by the tagged SQL query.
         const ids = params.slice(1) as number[];

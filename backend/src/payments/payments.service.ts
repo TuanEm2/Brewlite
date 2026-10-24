@@ -86,6 +86,19 @@ export class PaymentsService {
           data: { status: target },
         });
 
+        // TV5: điểm dựa trên số tiền thực trả sau giảm giá.
+        // Cùng transaction với Payment và trạng thái PAID.
+        if (dto.outcome === 'SUCCESS') {
+          const earnedPoints = Math.floor(order.total / 10000);
+
+          await tx.user.update({
+            where: { id: userId },
+            data: {
+              loyaltyPoints: { increment: earnedPoints },
+            },
+          });
+        }
+
         await tx.paymentAttempt.create({
           data: {
             orderId: order.id,

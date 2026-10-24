@@ -10,6 +10,11 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  @Get('me')
+  findMine(@CurrentUser() user: AuthenticatedUser) {
+    return this.ordersService.findMyOrders(user.id);
+  }
+
   @Get(':id')
   findOne(@CurrentUser() user: AuthenticatedUser, @Param('id', PositiveIntIdPipe) id: number) {
     return this.ordersService.findOwnedOrder(user.id, id);
