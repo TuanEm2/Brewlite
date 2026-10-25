@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "../../store/auth-store";
 import { formatVnd } from "../../store/cart-view";
-import { isPayable, statusLabel } from "../../store/checkout-utils";
+import { PENDING_CHECKOUT_KEY, isPayable, readSession, removeSession, statusLabel } from "../../store/checkout-utils";
 
 interface OrderItem {
   id: number;
@@ -58,6 +58,7 @@ export default function OrderHistoryPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -84,6 +85,30 @@ export default function OrderHistoryPage() {
       setLoading(false);
     }
   }, [token]);
+
+  async function cancelOrder(orderId: number) {
+    if (!token || cancellingId !== null) return;
+    if (!window.confirm(`Bạn muốn hủy đơn #${orderId}? Tồn kho sẽ được hoàn lại.`)) return;
+    setCancellingId(orderId);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/orders/${orderId}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(data.message || "Không thể hủy đơn hàng.");
+      }
+      const pending = readSession(PENDING_CHECKOUT_KEY) as { orderId?: number } | null;
+      if (pending?.orderId === orderId) removeSession(PENDING_CHECKOUT_KEY);
+      await loadOrders();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Không thể hủy đơn.");
+    } finally {
+      setCancellingId(null);
+    }
+  }
 
   useEffect(() => {
     if (!mounted) return;
@@ -225,7 +250,17 @@ export default function OrderHistoryPage() {
                       </p>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {["PENDING", "PAYMENT_FAILED", "PAID"].includes(order.status) && (
+                        <button
+                          type="button"
+                          onClick={() => void cancelOrder(order.id)}
+                          disabled={cancellingId !== null}
+                          className="rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-xs font-bold text-red-800 transition hover:bg-red-100 disabled:opacity-50"
+                        >
+                          {cancellingId === order.id ? "Đang hủy..." : "Hủy đơn"}
+                        </button>
+                      )}
                       {payable ? (
                         <Link
                           href={`/checkout/${order.id}`}

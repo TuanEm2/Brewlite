@@ -66,6 +66,9 @@ export class OrdersService {
    * @throws ConflictException khi trạng thái vừa bị yêu cầu khác thay đổi (409)
    */
   async changeStatus(orderId: number, to: OrderStatus): Promise<OrderResponseDto> {
+    if (to === OrderStatus.CANCELLED) {
+      return this.cancelOrderAndReleaseStock(orderId);
+    }
     if (PAYMENT_ONLY_STATUSES.includes(to)) {
       throw new BadRequestException(
         `Trạng thái ${to} chỉ được đặt qua thanh toán (POST /payments/mock).`,
@@ -90,6 +93,64 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
     return toResponse(order);
+  }
+
+  /** Only the order owner can cancel their order. Stock is returned atomically. */
+  async cancelOwnedOrder(userId: number, orderId: number): Promise<OrderResponseDto> {
+    return this.cancelOrderAndReleaseStock(orderId, userId);
+  }
+
+  /**
+   * Cancellation competes with payment and other status updates for the same order.
+   * Row locking guarantees that stock/loyalty are restored at most once.
+   * Payment is a mock; a PAID -> CANCELLED transition also reverses earned points,
+   * but no real bank refund is performed.
+   */
+  private async cancelOrderAndReleaseStock(orderId: number, userId?: number): Promise<OrderResponseDto> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
+      `;
+      if (locked.length === 0) throw new NotFoundException('Không tìm thấy đơn hàng.');
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDER_INCLUDE,
+      });
+      if (userId !== undefined && order.userId !== userId) {
+        throw new NotFoundException('Không tìm thấy đơn hàng.');
+      }
+      assertTransition(order.status, OrderStatus.CANCELLED);
+
+      const quantities = new Map<number, number>();
+      for (const item of order.items) {
+        quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.qty);
+      }
+      for (const [productId, quantity] of [...quantities].sort(([a], [b]) => a - b)) {
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            stock: { increment: quantity },
+            version: { increment: 1 },
+          },
+        });
+      }
+
+      // Points only accrue after PAID. Reverse them when a paid mock order is cancelled.
+      if (order.status === OrderStatus.PAID && order.userId !== null) {
+        const earned = Math.floor(order.total / 10000);
+        await tx.user.update({
+          where: { id: order.userId },
+          data: { loyaltyPoints: { decrement: earned } },
+        });
+      }
+
+      const cancelled = await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELLED },
+        include: ORDER_INCLUDE,
+      });
+      return toResponse(cancelled);
+    });
   }
 
   /**
@@ -212,6 +273,9 @@ export class OrdersService {
           include: ORDER_INCLUDE,
         });
         if (previous) return replayExistingOrder(previous, userId, dto);
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        throw new ConflictException('Đặt hàng đồng thời bị xung đột. Vui lòng thử lại.');
       }
       throw error;
     }

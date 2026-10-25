@@ -19,6 +19,7 @@ coverage/
 **/.env.*
 !.env.example
 !**/.env.example
+!.env.docker.example
 
 # debug files
 npm-debug.log*
