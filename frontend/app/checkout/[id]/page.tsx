@@ -9,6 +9,7 @@ import { formatVnd } from "../../../store/cart-view";
 import {
   PAYMENT_METHODS,
   PENDING_CHECKOUT_KEY,
+  cartFingerprint,
   isPayable,
   methodLabel,
   paymentAttemptStorageKey,
@@ -17,6 +18,7 @@ import {
   reusableAttempt,
   statusLabel,
   writeSession,
+  type PendingCheckout,
   type PaymentAttempt,
   type PaymentMethod,
   type PaymentOutcome,
@@ -61,6 +63,7 @@ export default function CheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
+  const userId = useAuthStore((state) => state.user?.id);
   const cartItems = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
 
@@ -112,23 +115,44 @@ export default function CheckoutPage() {
   }, [mounted, token, id, loadOrder, router]);
 
   // Khi đơn đã PAID: giỏ hàng của đơn này hoàn tất → xóa giỏ và liên kết đơn chờ.
+    // Chỉ xóa giỏ nếu vẫn đúng nội dung đã dùng để tạo đơn.
   useEffect(() => {
-    if (order?.status !== "PAID") return;
-    const pending = readSession(PENDING_CHECKOUT_KEY) as { orderId?: number } | null;
-    if (pending?.orderId === order.id) {
-      clearCart();
+    if (order?.status !== "PAID" || userId === undefined) return;
+
+    const saved = readSession(PENDING_CHECKOUT_KEY);
+    const pending =
+      saved !== null && typeof saved === "object"
+        ? (saved as Partial<PendingCheckout>)
+        : null;
+
+    if (
+      pending?.orderId === order.id &&
+      pending.userId === userId
+    ) {
+      // Đọc giỏ mới nhất ngay lúc xử lý kết quả thanh toán.
+      const currentItems = useCartStore.getState().items;
+      const voucher = order.voucherCode?.trim().toUpperCase() ?? "";
+      const currentFingerprint =
+        cartFingerprint(currentItems) +
+        (voucher ? `|v:${voucher}` : "");
+
+      if (pending.fingerprint === currentFingerprint) {
+        clearCart();
+      }
+
+      // Đơn đã thanh toán nên không còn là đơn chờ,
+      // kể cả khi giỏ đã thay đổi và cần được giữ lại.
       removeSession(PENDING_CHECKOUT_KEY);
     }
-    removeSession(paymentAttemptStorageKey(order.id));
-  }, [order, clearCart]);
 
+    removeSession(paymentAttemptStorageKey(order.id));
+  }, [order, userId, clearCart]);
   async function pay() {
     if (!token || !order || working || !isPayable(order.status)) return;
     setNotice(null);
     setWorking(true);
 
     const storageKey = paymentAttemptStorageKey(order.id);
-    // Thử lại sau khi mất mạng → dùng LẠI đúng khóa cũ để server không ghi nhận hai lần.
     const attempt: PaymentAttempt =
       reusableAttempt(readSession(storageKey), order.id, method, outcome) ?? {
         orderId: order.id,
@@ -142,34 +166,46 @@ export default function CheckoutPage() {
     try {
       response = await fetch(`${API_URL}/payments/mock`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(attempt),
       });
     } catch {
-      // Không biết server đã nhận chưa: GIỮ khóa để lần bấm "Thử lại" gửi đúng khóa này.
+      // Giữ khóa để gửi lại cùng yêu cầu khi chưa biết kết quả.
       setNotice({
         kind: "unknown",
-        text: "Mất kết nối khi đang thanh toán. Bấm \"Thử lại\": hệ thống dùng lại cùng mã giao dịch nên không bị trừ tiền hai lần.",
+        text: 'Mất kết nối khi đang thanh toán. Bấm "Thử lại": hệ thống dùng lại cùng mã giao dịch nên không bị trừ tiền hai lần.',
       });
       setWorking(false);
       return;
     }
 
     try {
-      const data = (await response.json().catch(() => ({}))) as Partial<PaymentResult> & { message?: unknown };
-      // Server đã trả lời rõ ràng → khóa này đã dùng xong.
+      const data = (await response.json().catch(() => ({}))) as
+        Partial<PaymentResult> & { message?: unknown };
+
       removeSession(storageKey);
 
       if (response.status === 401) {
-        router.replace(`/login?redirect=${encodeURIComponent(`/checkout/${order.id}`)}`);
+        router.replace(
+          `/login?redirect=${encodeURIComponent(`/checkout/${order.id}`)}`,
+        );
         return;
       }
+
       if (!response.ok) {
-        const message = Array.isArray(data.message) ? data.message.join("; ") : String(data.message ?? "");
-        // 409: đơn có thể đã được thanh toán ở lần trước → tải lại để hiển thị đúng trạng thái.
+        const message = Array.isArray(data.message)
+          ? data.message.join("; ")
+          : String(data.message ?? "");
+
         const latest = await loadOrder(token).catch(() => null);
         if (latest?.status !== "PAID") {
-          setNotice({ kind: "error", text: message || "Không thể xử lý thanh toán. Vui lòng thử lại." });
+          setNotice({
+            kind: "error",
+            text: message || "Không thể xử lý thanh toán. Vui lòng thử lại.",
+          });
         }
         return;
       }
@@ -183,6 +219,7 @@ export default function CheckoutPage() {
           text: "Thanh toán không thành công. Giỏ hàng của bạn vẫn được giữ nguyên, bạn có thể thử lại hoặc đổi phương thức.",
         });
       }
+
       await loadOrder(token).catch(() => undefined);
     } finally {
       setWorking(false);
@@ -190,7 +227,8 @@ export default function CheckoutPage() {
   }
 
   const productName = (productId: number) =>
-    cartItems.find((item) => item.productId === productId)?.name ?? `Đồ uống #${productId}`;
+    cartItems.find((item) => item.productId === productId)?.name ??
+    `Đồ uống #${productId}`;
 
   // ---------- Màn hình xác nhận (wireframe 5) ----------
   if (order?.status === "PAID") {
