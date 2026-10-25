@@ -20,6 +20,11 @@ export class OrdersController {
     return this.ordersService.findOwnedOrder(user.id, id);
   }
 
+  @Post(':id/cancel')
+  cancelMine(@CurrentUser() user: AuthenticatedUser, @Param('id', PositiveIntIdPipe) id: number) {
+    return this.ordersService.cancelOwnedOrder(user.id, id);
+  }
+
   @Post()
   create(
     @CurrentUser() user: AuthenticatedUser,

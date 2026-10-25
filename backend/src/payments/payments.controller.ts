@@ -9,6 +9,13 @@ import { PaymentsService } from './payments.service';
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  pay(@CurrentUser() user: AuthenticatedUser, @Body() dto: MockPaymentDto) {
+    return this.paymentsService.mockPayment(user.id, dto);
+  }
+
+  // Keep legacy endpoint for the current checkout page.
   @Post('mock')
   @HttpCode(HttpStatus.OK)
   mock(@CurrentUser() user: AuthenticatedUser, @Body() dto: MockPaymentDto) {

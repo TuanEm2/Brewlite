@@ -2,9 +2,9 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrdersService } from './orders.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { ProductsService } from '../products/products.service';
+import { OrdersService } from '../src/orders/orders.service';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { ProductsService } from '../src/products/products.service';
 
 describe('Đặt hàng đồng thời — tồn kho', () => {
   let moduleRef: TestingModule;
