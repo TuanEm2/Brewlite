@@ -1,4 +1,4 @@
-# BrewLite ☕ | Software Engineering — Sprint 1–2 + Sprint 3 TV1
+# BrewLite ☕ | Software Engineering — Full MVP (Sprint 1–3)
 
 > **Cập nhật Sprint 3 (TV1):** Source tích hợp Sprint 1–2; TV1 bổ sung Mock Payment, idempotency và trang thanh toán thử. Xem hướng dẫn **`docs/SPRINT-03-TASK-08-TV1.md`**. Các checklist Sprint 1 bên dưới là tài liệu lịch sử, có thể chưa được cập nhật. **Không chạy seed/reset trên PostgreSQL có dữ liệu cần giữ.**
 

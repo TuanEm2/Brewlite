@@ -30,7 +30,17 @@ type OrderItem = {
   quantity: number;
   lineTotal: number;
 };
-type Order = { id: number; status: string; total: number; createdAt: string; items?: OrderItem[] };
+
+type Order = {
+  id: number;
+  status: string;
+  total: number;
+  discount?: number;
+  voucherCode?: string | null;
+  createdAt: string;
+  items?: OrderItem[];
+};
+
 type PaymentResult = {
   orderId: number;
   status: string;
@@ -209,6 +219,12 @@ export default function CheckoutPage() {
                 <dd className="font-semibold">{methodLabel(paidMethod)}</dd>
               </div>
             )}
+            {order.discount !== undefined && order.discount > 0 && (
+              <div className="flex justify-between text-green-700">
+                <dt className="text-gray-600">Giảm giá ({order.voucherCode || "Voucher"})</dt>
+                <dd className="font-semibold">-{formatVnd(order.discount)}</dd>
+              </div>
+            )}
             <div className="flex justify-between border-t border-amber-100 pt-2 text-base">
               <dt className="font-bold">Đã thanh toán</dt>
               <dd className="font-extrabold text-amber-700">{formatVnd(order.total)}</dd>
@@ -218,6 +234,9 @@ export default function CheckoutPage() {
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link href="/" className="rounded-xl bg-amber-800 px-5 py-3 font-bold text-white hover:bg-amber-900">
               Về trang chủ
+            </Link>
+            <Link href="/orders" className="rounded-xl border border-amber-300 px-5 py-3 font-semibold text-amber-900 hover:bg-amber-50">
+              Lịch sử đơn
             </Link>
             <Link href="/menu" className="rounded-xl border border-amber-300 px-5 py-3 font-semibold text-amber-900 hover:bg-amber-50">
               Đặt thêm đồ uống
@@ -282,6 +301,13 @@ export default function CheckoutPage() {
                   </li>
                 ))}
               </ul>
+            )}
+
+            {order.discount !== undefined && order.discount > 0 && (
+              <div className="mt-3 flex justify-between text-sm text-green-700">
+                <span>Voucher ({order.voucherCode || "Giảm giá"}):</span>
+                <span className="font-semibold">-{formatVnd(order.discount)}</span>
+              </div>
             )}
 
             <div className="mt-3 flex justify-between border-t border-amber-100 pt-3 text-lg">

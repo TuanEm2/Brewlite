@@ -30,6 +30,7 @@ export default function CartPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [ordering, setOrdering] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [voucherCode, setVoucherCode] = useState("");
 
   useEffect(() => setMounted(true), []);
 
@@ -40,15 +41,23 @@ export default function CartPage() {
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
   ).replace(/\/+$/, "");
 
+  // Ước tính giảm giá nếu áp dụng voucher demo BREW10
+  const normalizedVoucher = voucherCode.trim().toUpperCase();
+  const estimatedDiscount =
+    normalizedVoucher === "BREW10" && total >= 50000
+      ? Math.min(Math.floor(total * 0.1), 20000)
+      : 0;
+
   async function handleCreateOrder() {
     if (!token) {
       router.push("/login?redirect=/cart");
       return;
     }
 
-    // Giỏ này đã có đơn chờ thanh toán (vd: lần trước thanh toán lỗi) → quay lại đúng đơn đó,
-    // không tạo thêm đơn mới. Đổi món/số lượng sẽ tạo đơn mới.
-    const fingerprint = cartFingerprint(items);
+    // Giỏ này kèm voucher đã có đơn chờ thanh toán (vd: lần trước thanh toán lỗi) → quay lại đúng đơn đó,
+    // không tạo thêm đơn mới. Đổi món/số lượng/voucher sẽ tạo đơn mới.
+    const rawFingerprint = cartFingerprint(items);
+    const fingerprint = rawFingerprint + (normalizedVoucher ? `|v:${normalizedVoucher}` : "");
     const pendingOrderId = pendingOrderFor(readSession(PENDING_CHECKOUT_KEY), user?.id, fingerprint);
     if (pendingOrderId !== null) {
       router.push(`/checkout/${pendingOrderId}`);
@@ -66,11 +75,11 @@ export default function CartPage() {
           toppings: item.toppings.map((t) => t.name),
           quantity: item.quantity,
         })),
+        ...(normalizedVoucher ? { voucherCode: normalizedVoucher } : {}),
       };
 
-      // Lưu khóa theo đúng user + giỏ hiện tại. Khi timeout, retry vẫn cùng key.
-      // Nếu đổi món/số lượng/tài khoản sẽ dùng key mới.
-      const requestFingerprint = JSON.stringify({ userId: user?.id, items: orderPayload.items });
+      // Lưu khóa theo đúng user + giỏ + voucher hiện tại. Khi timeout, retry vẫn cùng key.
+      const requestFingerprint = JSON.stringify({ userId: user?.id, ...orderPayload });
       const storageKey = "brewlite-create-order-attempt";
       let existing: { fingerprint: string; key: string } | null = null;
       try {
@@ -282,7 +291,41 @@ export default function CartPage() {
                     {formatVnd(total)}
                   </dd>
                 </div>
+                {estimatedDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-green-700">
+                    <dt className="font-medium">Ước tính giảm ({normalizedVoucher})</dt>
+                    <dd className="font-bold">-{formatVnd(estimatedDiscount)}</dd>
+                  </div>
+                )}
+                {estimatedDiscount > 0 && (
+                  <div className="flex justify-between border-t border-amber-100 pt-2 text-base">
+                    <dt className="font-bold text-gray-900">Cần thanh toán</dt>
+                    <dd className="font-extrabold text-amber-800">
+                      {formatVnd(total - estimatedDiscount)}
+                    </dd>
+                  </div>
+                )}
               </dl>
+
+              {/* Ô nhập voucher */}
+              <div className="mt-4 border-t border-amber-100 pt-3">
+                <label htmlFor="voucherInput" className="block text-xs font-bold text-gray-700">
+                  Mã giảm giá (Voucher)
+                </label>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    id="voucherInput"
+                    type="text"
+                    placeholder="VD: BREW10"
+                    value={voucherCode}
+                    onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
+                    className="w-full rounded-lg border border-amber-200 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-amber-950 focus:border-amber-700 focus:outline-none"
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Mã demo: <strong className="text-amber-800">BREW10</strong> (giảm 10% tối đa 20.000đ cho đơn từ 50.000đ).
+                </p>
+              </div>
 
               {token ? (
                 <button
@@ -291,7 +334,7 @@ export default function CartPage() {
                   disabled={ordering}
                   className="mt-5 w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white shadow transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-gray-400"
                 >
-                  {ordering ? "Đang tạo đơn hàng..." : `Thanh toán (${formatVnd(total)})`}
+                  {ordering ? "Đang tạo đơn hàng..." : `Thanh toán (${formatVnd(estimatedDiscount > 0 ? total - estimatedDiscount : total)})`}
                 </button>
               ) : (
                 <div className="mt-5 space-y-2">
@@ -309,7 +352,7 @@ export default function CartPage() {
               )}
 
               <p className="mt-3 text-xs text-gray-500">
-                Bấm Thanh toán để tạo đơn (PENDING) rồi chọn Ví hoặc Thẻ. Giá và tồn kho được hệ thống kiểm tra lại; giỏ hàng chỉ được xóa khi thanh toán thành công.
+                Bấm Thanh toán để tạo đơn (PENDING) rồi chọn Ví hoặc Thẻ. Giá, mã voucher và tồn kho được hệ thống kiểm tra lại; giỏ hàng chỉ được xóa khi thanh toán thành công.
               </p>
             </aside>
           </div>

@@ -39,12 +39,26 @@ export default function Navbar() {
             >
               Giỏ hàng
             </Link>
+            {isAuthenticated && (
+              <Link
+                href="/orders"
+                className="text-sm font-semibold text-gray-700 transition hover:text-amber-900"
+              >
+                Lịch sử đơn
+              </Link>
+            )}
           </nav>
         </div>
 
         <div className="flex items-center gap-3">
           {isAuthenticated ? (
             <div className="flex items-center gap-3">
+              <Link
+                href="/orders"
+                className="text-xs font-semibold text-amber-900 hover:underline sm:hidden"
+              >
+                Đơn hàng
+              </Link>
               <span className="hidden text-xs font-medium text-gray-600 sm:inline">
                 👤 {user?.email}
               </span>
