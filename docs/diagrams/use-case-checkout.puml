@@ -1,0 +1,31 @@
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam shadowing false
+skinparam monochrome true
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 14
+skinparam nodesep 45
+skinparam ranksep 65
+skinparam packageStyle rectangle
+
+actor "Khách hàng" as Customer
+rectangle "BrewLite - Đặt và thanh toán đơn hàng" {
+  usecase "Quản lý giỏ hàng" as Cart
+  usecase "Đặt và thanh toán\nđơn hàng" as Checkout
+  usecase "Xem lịch sử và\nchi tiết đơn hàng" as History
+  usecase "Tạo đơn hàng" as Create
+  usecase "Thanh toán đơn hàng" as Pay
+
+  Cart -[hidden]down- Checkout
+  Checkout -[hidden]down- History
+  Create -[hidden]down- Pay
+  Checkout ..> Create : <<include>>
+  Checkout ..> Pay : <<include>>
+}
+actor "Dịch vụ thanh toán\n(mô phỏng)" as Payment
+Customer -- Cart
+Customer -- Checkout
+Customer -- History
+Pay -- Payment
+@enduml
