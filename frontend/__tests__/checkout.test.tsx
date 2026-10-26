@@ -299,4 +299,199 @@ describe('Checkout — bảo vệ giỏ khi thanh toán đơn cũ', () => {
     expect(sessionStorage.getItem('brewlite-mock-payment-42')).toBeNull();
   });
 
+  it('giữ giỏ khi mất mạng và dùng lại khóa khi thử thanh toán lại', async () => {
+    const user = userEvent.setup();
+    addDrink(1, 'Món A');
+
+    sessionStorage.setItem(
+      PENDING_CHECKOUT_KEY,
+      JSON.stringify({
+        orderId: 42,
+        userId: 7,
+        fingerprint: cartFingerprint(useCartStore.getState().items),
+      }),
+    );
+
+    const attempt = {
+      orderId: 42,
+      idempotencyKey: '26c0d1fa-5f34-4e1c-9d76-ff2c8854ff01',
+      method: 'MOCK_QR',
+      outcome: 'SUCCESS',
+    };
+
+    sessionStorage.setItem(
+      'brewlite-mock-payment-42',
+      JSON.stringify(attempt),
+    );
+
+    const pendingOrder = {
+      id: 42,
+      status: 'PENDING',
+      total: 45000,
+      discount: 0,
+      voucherCode: null,
+      createdAt: '2026-10-26T00:00:00.000Z',
+      items: [],
+    };
+
+    const jsonResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      json: async () => body,
+    });
+
+    const fetchMock = globalThis.fetch as jest.Mock;
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(pendingOrder))
+      // Lần thanh toán đầu mất kết nối, chưa biết kết quả.
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      // Gửi lại: backend trả kết quả đã xử lý.
+      .mockResolvedValueOnce(jsonResponse({
+        ...attempt,
+        status: 'PAID',
+        amount: 45000,
+        replayed: true,
+        message: 'Giao dịch đã được xử lý',
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...pendingOrder,
+        status: 'PAID',
+      }));
+
+    render(<CheckoutPage />);
+
+    await user.click(
+      await screen.findByRole('button', { name: /Xác nhận trả/ }),
+    );
+
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('Mất kết nối');
+    expect(useCartStore.getState().items).toHaveLength(1);
+    expect(
+      JSON.parse(sessionStorage.getItem('brewlite-mock-payment-42')!),
+    ).toEqual(attempt);
+
+    await user.click(
+      screen.getByRole('button', { name: /Thử lại.*Xác nhận trả/ }),
+    );
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Đặt hàng thành công',
+      }),
+    ).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    // Hai lần POST thanh toán phải gửi cùng nội dung và khóa.
+    const firstPayment = fetchMock.mock.calls[1];
+    const retryPayment = fetchMock.mock.calls[2];
+
+    expect(firstPayment[0]).toMatch(/\/payments\/mock$/);
+    expect(retryPayment[0]).toBe(firstPayment[0]);
+    expect(firstPayment[1].method).toBe('POST');
+    expect(retryPayment[1].method).toBe('POST');
+    expect(JSON.parse(firstPayment[1].body)).toEqual(attempt);
+    expect(JSON.parse(retryPayment[1].body)).toEqual(attempt);
+
+    expect(useCartStore.getState().items).toHaveLength(0);
+    expect(sessionStorage.getItem('brewlite-mock-payment-42')).toBeNull();
+  });
+
+  it('giữ giỏ và cho phép thử lại khi thanh toán bị từ chối', async () => {
+    const user = userEvent.setup();
+    addDrink(1, 'Món A');
+
+    const pendingCheckout = {
+      orderId: 42,
+      userId: 7,
+      fingerprint: cartFingerprint(useCartStore.getState().items),
+    };
+
+    sessionStorage.setItem(
+      PENDING_CHECKOUT_KEY,
+      JSON.stringify(pendingCheckout),
+    );
+
+    const attempt = {
+      orderId: 42,
+      idempotencyKey: '26c0d1fa-5f34-4e1c-9d76-ff2c8854ff02',
+      method: 'MOCK_QR',
+      outcome: 'FAILURE',
+    };
+
+    sessionStorage.setItem(
+      'brewlite-mock-payment-42',
+      JSON.stringify(attempt),
+    );
+
+    const pendingOrder = {
+      id: 42,
+      status: 'PENDING',
+      total: 45000,
+      discount: 0,
+      voucherCode: null,
+      createdAt: '2026-10-26T00:00:00.000Z',
+      items: [],
+    };
+
+    const jsonResponse = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      json: async () => body,
+    });
+
+    const fetchMock = globalThis.fetch as jest.Mock;
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(pendingOrder))
+      .mockResolvedValueOnce(jsonResponse({
+        ...attempt,
+        status: 'PAYMENT_FAILED',
+        amount: 45000,
+        replayed: false,
+        message: 'Thanh toán thất bại',
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...pendingOrder,
+        status: 'PAYMENT_FAILED',
+      }));
+
+    render(<CheckoutPage />);
+
+    await user.click(
+      await screen.findByRole('radio', { name: 'Thất bại' }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: /Xác nhận trả/ }),
+    );
+
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('Thanh toán không thành công');
+
+    expect(
+      await screen.findByText('PAYMENT_FAILED · Thanh toán thất bại'),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByRole('heading', { name: 'Đặt hàng thành công' }),
+    ).not.toBeInTheDocument();
+
+    expect(
+      screen.getByRole('button', { name: /Thử lại.*Xác nhận trả/ }),
+    ).toBeEnabled();
+
+    expect(useCartStore.getState().items).toHaveLength(1);
+    expect(
+      JSON.parse(sessionStorage.getItem(PENDING_CHECKOUT_KEY)!),
+    ).toEqual(pendingCheckout);
+
+    // Đã biết kết quả: bỏ khóa cũ để lần thử mới dùng khóa mới.
+    expect(sessionStorage.getItem('brewlite-mock-payment-42')).toBeNull();
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(attempt);
+  });
+
 });
