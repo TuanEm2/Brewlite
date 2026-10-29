@@ -106,6 +106,8 @@ Các route `/api/products`, `/api/orders`, `/api/payments`... được cung cấ
 
 ## An toàn dữ liệu
 
+Phần CSDL nguyên liệu do TV2 bổ sung: xem [hợp đồng dữ liệu, công thức demo và bàn giao cho TV4](docs/TV2-INGREDIENTS-HANDOVER.md). Sau khi áp dụng migration, có thể nạp mẫu bằng `npm run prisma:seed:ingredients -w @brewlite/backend` trên môi trường demo. Script này giữ nguyên tồn kho/công thức đã có khi chạy lặp. Phần service kiểm tra/trừ kho nguyên liệu và API báo hết hàng cần được TV4 tích hợp tiếp; chỉ thêm bảng chưa làm thay đổi hành vi tồn kho của web.
+
 - Không commit `.env` chứa secret. Thay JWT secret và mật khẩu demo trước khi đưa web ra mạng.
 - Không chạy `prisma migrate reset`, `prisma db push --accept-data-loss`, `prisma:seed`, hoặc `docker compose down -v` trên dữ liệu cần giữ.
 - Giữ bản sao database trước khi thực hiện migration quan trọng. Cổng backend/frontend Docker chỉ bind localhost (dành cho demo máy cá nhân).

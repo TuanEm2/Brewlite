@@ -15,6 +15,7 @@
     "prisma:reset": "prisma migrate reset",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed",
+    "prisma:seed:ingredients": "ts-node prisma/seed-ingredients.ts",
     "prisma:studio": "prisma studio"
   },
   "prisma": {
