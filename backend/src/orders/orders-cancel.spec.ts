@@ -25,22 +25,16 @@ function fixture(status: OrderStatus, userId = 12) {
     product: { update: jest.fn().mockResolvedValue({}) },
     user: { update: jest.fn().mockResolvedValue({}) },
     productIngredient: {
-      findMany: jest.fn().mockResolvedValue([
-        {
-          productId: 7,
-          ingredientId: 'COFFEE',
-          size: 'S',
-          topping: '',
-          quantity: 20,
-          ingredient: { id: 'COFFEE', name: 'Cà phê', unit: 'G', stock: 1000, version: 0 },
-        },
-      ]),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     ingredient: {
       update: jest.fn().mockResolvedValue({}),
     },
     orderIngredient: {
-      findMany: jest.fn().mockResolvedValue([]),
+      // Cung cấp snapshot nguyên liệu mẫu để hàm hủy đơn có dữ liệu hoàn kho thực tế
+      findMany: jest.fn().mockResolvedValue([
+        { id: 1, orderId: 44, ingredientId: 'COFFEE', quantity: 40 },
+      ]),
     },
   };
 
@@ -60,7 +54,7 @@ describe('Cancel order — stock and loyalty integrity', () => {
     const { service, tx } = fixture(OrderStatus.PENDING);
     const response = await service.cancelOwnedOrder(12, 44);
     expect(response.status).toBe(OrderStatus.CANCELLED);
-    // Kiểm tra hệ thống hoàn trả tồn kho thông qua ingredient.update thay vì product.update
+    // Kiểm tra hệ thống hoàn trả tồn kho thông qua ingredient.update dựa trên snapshot
     expect(tx.ingredient.update).toHaveBeenCalled();
     expect(tx.user.update).not.toHaveBeenCalled();
   });

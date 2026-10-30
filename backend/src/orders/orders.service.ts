@@ -93,7 +93,7 @@ export class OrdersService {
   }
 
   /**
-   * Hủy đơn và hoàn trả tồn kho nguyên liệu một cách nguyên vẹn (Atomic & Row locking).
+   * Hủy đơn và hoàn trả tồn kho nguyên liệu dựa trên snapshot OrderIngredient thực tế đã lưu khi đặt hàng.
    */
   private async cancelOrderAndReleaseStock(orderId: number, userId?: number): Promise<OrderResponseDto> {
     return this.prisma.$transaction(async (tx) => {
@@ -106,11 +106,7 @@ export class OrdersService {
         where: { id: orderId },
         include: {
           ...ORDER_INCLUDE,
-          items: {
-            include: {
-              product: true,
-            },
-          },
+          items: true,
         },
       });
 
@@ -119,42 +115,30 @@ export class OrdersService {
       }
       assertTransition(order.status, OrderStatus.CANCELLED);
 
-      // Lấy danh sách sản phẩm trong đơn để tra cứu nguyên liệu độc lập qua bảng trung gian
-      const productIdsInOrder = [...new Set(order.items.map((item) => item.productId))];
-      const rawProductIngredients = await tx.productIngredient.findMany({
-        where: { productId: { in: productIdsInOrder } },
-        include: { ingredient: true },
+      // Lấy danh sách snapshot nguyên liệu đã lưu lúc tạo đơn
+      const orderIngredients = await tx.orderIngredient.findMany({
+        where: { orderId: orderId },
       });
 
-      const productIngredientsMap = new Map<number, any[]>();
-      for (const pi of rawProductIngredients) {
-        const list = productIngredientsMap.get(pi.productId) ?? [];
-        list.push(pi);
-        productIngredientsMap.set(pi.productId, list);
-      }
-
-      // Tính tổng nguyên liệu cần hoàn trả dựa trên sản phẩm và định lượng cấu thành
-      const ingredientQuantities = new Map<number, number>();
-      for (const item of order.items) {
-        const pis = productIngredientsMap.get(item.productId) ?? [];
-        for (const pi of pis) {
-          const totalReturn = Number(pi.quantity) * item.qty;
+      // Chỉ hoàn kho nếu có snapshot OrderIngredient (tránh hoàn bừa cho đơn hàng cũ không có dữ liệu định lượng)
+      if (orderIngredients.length > 0) {
+        const ingredientQuantities = new Map<number, number>();
+        for (const oi of orderIngredients) {
           ingredientQuantities.set(
-            pi.ingredientId,
-            (ingredientQuantities.get(pi.ingredientId) ?? 0) + totalReturn,
+            oi.ingredientId,
+            (ingredientQuantities.get(oi.ingredientId) ?? 0) + Number(oi.quantity),
           );
         }
-      }
 
-      // Hoàn trả tồn kho và tăng version cho từng nguyên liệu
-      for (const [ingredientId, quantity] of [...ingredientQuantities].sort(([a], [b]) => a - b)) {
-        await tx.ingredient.update({
-          where: { id: ingredientId },
-          data: {
-            stock: { increment: quantity },
-            version: { increment: 1 },
-          },
-        });
+        for (const [ingredientId, quantity] of [...ingredientQuantities].sort(([a], [b]) => a - b)) {
+          await tx.ingredient.update({
+            where: { id: ingredientId },
+            data: {
+              stock: { increment: quantity },
+              version: { increment: 1 },
+            },
+          });
+        }
       }
 
       // Điểm tích lũy chỉ cộng sau khi PAID. Thu hồi lại khi đơn đã thanh toán bị hủy.
@@ -177,8 +161,7 @@ export class OrdersService {
 
   /**
    * Tạo đơn ở trạng thái PENDING từ giỏ hàng đã validate.
-   * Kiểm tra tồn kho nguyên liệu, đảm bảo "hết nguyên liệu mà còn ly thì báo hết hàng" 
-   * kết hợp Optimistic Locking.
+   * Lọc công thức linh hoạt theo size/topping, kiểm tra tồn kho và lưu snapshot OrderIngredient.
    */
   async createPending(
     userId: number | null,
@@ -197,7 +180,6 @@ export class OrdersService {
     let order: OrderWithItems;
     try {
       order = await this.prisma.$transaction(async (tx) => {
-        // Lấy danh sách sản phẩm
         const rawProducts = await tx.product.findMany({
           where: { id: { in: productIds } },
         });
@@ -210,7 +192,6 @@ export class OrdersService {
           );
         }
 
-        // Lấy thông tin quan hệ product-ingredient độc lập từ bảng trung gian
         const rawProductIngredients = await tx.productIngredient.findMany({
           where: { productId: { in: productIds } },
           include: { ingredient: true },
@@ -223,22 +204,41 @@ export class OrdersService {
           productIngredientsMap.set(pi.productId, list);
         }
 
-        // 1. Tính tổng số lượng nguyên liệu cần thiết cho đơn hàng này
         const requiredIngredients = new Map<number, { name: string; requiredQty: number; ingredient: any }>();
+        const ingredientSnapshotsMap = new Map<number, number>();
 
         for (const item of dto.items) {
           const pis = productIngredientsMap.get(item.productId) ?? [];
-          for (const pi of pis) {
+          
+          let basePis = pis.filter((pi) => pi.size && pi.size === item.size);
+          if (basePis.length === 0) {
+            basePis = pis.filter((pi) => !pi.size || pi.size === '');
+          }
+          if (basePis.length === 0) {
+            basePis = pis;
+          }
+
+          const selectedToppings = item.toppings ?? [];
+          let matchedPis = basePis.filter((pi) => !pi.topping || pi.topping === '' || selectedToppings.includes(pi.topping));
+          if (matchedPis.length === 0) {
+            matchedPis = basePis;
+          }
+
+          for (const pi of matchedPis) {
             const totalNeeded = Number(pi.quantity) * item.quantity;
-            
+            if (totalNeeded <= 0) continue;
+
             const current = requiredIngredients.get(pi.ingredientId) ?? {
               name: pi.ingredient.name,
               requiredQty: 0,
               ingredient: pi.ingredient,
             };
-            
+
             current.requiredQty += totalNeeded;
             requiredIngredients.set(pi.ingredientId, current);
+
+            const existingQty = ingredientSnapshotsMap.get(pi.ingredientId) ?? 0;
+            ingredientSnapshotsMap.set(pi.ingredientId, existingQty + totalNeeded);
           }
         }
 
@@ -246,7 +246,6 @@ export class OrdersService {
         for (const [ingredientId, data] of requiredIngredients) {
           const ing = data.ingredient;
 
-          // Hết nguyên liệu mà còn ly -> Báo hết hàng nguyên liệu
           if (data.requiredQty > ing.stock) {
             throw new ConflictException(
               `Nguyên liệu "${ing.name}" đã hết (chỉ còn ${ing.stock}), không đủ cho đơn hàng này!`,
@@ -281,8 +280,7 @@ export class OrdersService {
           dto.voucherCode,
         );
 
-        // 3. Tạo Order và OrderItem trong transaction
-        return await tx.order.create({
+        const createdOrder = await tx.order.create({
           data: {
             userId,
             idempotencyKey: dto.idempotencyKey,
@@ -303,6 +301,22 @@ export class OrdersService {
           },
           include: ORDER_INCLUDE,
         });
+
+        const ingredientSnapshots = Array.from(ingredientSnapshotsMap.entries()).map(
+          ([ingredientId, quantity]) => ({
+            orderId: createdOrder.id,
+            ingredientId,
+            quantity,
+          }),
+        );
+
+        if (ingredientSnapshots.length > 0) {
+          await tx.orderIngredient.createMany({
+            data: ingredientSnapshots,
+          });
+        }
+
+        return createdOrder;
       });
     } catch (error: unknown) {
       if (dto.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
