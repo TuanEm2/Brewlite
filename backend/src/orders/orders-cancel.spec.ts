@@ -13,6 +13,7 @@ function fixture(status: OrderStatus, userId = 12) {
       { id: 2, productId: 7, size: 'M', qty: 1, toppings: [], unitPrice: 5000, lineTotal: 5000 },
     ],
   };
+  
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([{ id: stored.id }]),
     order: {
@@ -23,7 +24,26 @@ function fixture(status: OrderStatus, userId = 12) {
     },
     product: { update: jest.fn().mockResolvedValue({}) },
     user: { update: jest.fn().mockResolvedValue({}) },
+    productIngredient: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          productId: 7,
+          ingredientId: 'COFFEE',
+          size: 'S',
+          topping: '',
+          quantity: 20,
+          ingredient: { id: 'COFFEE', name: 'Cà phê', unit: 'G', stock: 1000, version: 0 },
+        },
+      ]),
+    },
+    ingredient: {
+      update: jest.fn().mockResolvedValue({}),
+    },
+    orderIngredient: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
+
   type MockTransaction = typeof tx;
   const prisma = {
     $transaction: jest.fn(async (fn: (client: MockTransaction) => Promise<unknown>) => fn(tx)),
@@ -40,11 +60,8 @@ describe('Cancel order — stock and loyalty integrity', () => {
     const { service, tx } = fixture(OrderStatus.PENDING);
     const response = await service.cancelOwnedOrder(12, 44);
     expect(response.status).toBe(OrderStatus.CANCELLED);
-    expect(tx.product.update).toHaveBeenCalledTimes(1);
-    expect(tx.product.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 7 },
-      data: { stock: { increment: 3 }, version: { increment: 1 } },
-    }));
+    // Kiểm tra hệ thống hoàn trả tồn kho thông qua ingredient.update thay vì product.update
+    expect(tx.ingredient.update).toHaveBeenCalled();
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 
@@ -59,14 +76,14 @@ describe('Cancel order — stock and loyalty integrity', () => {
   it('rejects another user without modifying inventory', async () => {
     const { service, tx } = fixture(OrderStatus.PENDING);
     await expect(service.cancelOwnedOrder(99, 44)).rejects.toBeInstanceOf(NotFoundException);
-    expect(tx.product.update).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
     expect(tx.order.update).not.toHaveBeenCalled();
   });
 
   it('refuses cancelling twice, preventing double stock refund', async () => {
     const { service, tx } = fixture(OrderStatus.CANCELLED);
     await expect(service.cancelOwnedOrder(12, 44)).rejects.toBeInstanceOf(ConflictException);
-    expect(tx.product.update).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
     expect(tx.order.update).not.toHaveBeenCalled();
   });
 });

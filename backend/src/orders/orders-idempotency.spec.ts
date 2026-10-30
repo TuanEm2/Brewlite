@@ -36,6 +36,9 @@ describe('CreateOrder idempotency — Sprint 3 TV1', () => {
   let findManyByIds: jest.Mock;
   let productFindMany: jest.Mock;
   let productUpdateMany: jest.Mock;
+  let productIngredientFindMany: jest.Mock;
+  let ingredientUpdateMany: jest.Mock;
+  let orderIngredientCreateMany: jest.Mock;
 
   beforeEach(() => {
     findUnique = jest.fn().mockResolvedValue({ ...oldOrder });
@@ -50,15 +53,54 @@ describe('CreateOrder idempotency — Sprint 3 TV1', () => {
       toppings: [{ name: 'Kem', price: 10000 }],
     }]);
     productUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    
+    productIngredientFindMany = jest.fn().mockResolvedValue([
+      {
+        productId: 3,
+        ingredientId: 'COFFEE',
+        size: 'L',
+        topping: '',
+        quantity: 26,
+        ingredient: { id: 'COFFEE', name: 'Cà phê', unit: 'G', stock: 1000, version: 0 },
+      },
+      {
+        productId: 3,
+        ingredientId: 'CREAM',
+        size: 'L',
+        topping: 'Kem',
+        quantity: 20,
+        ingredient: { id: 'CREAM', name: 'Kem', unit: 'G', stock: 1000, version: 0 },
+      },
+      {
+        productId: 3,
+        ingredientId: 'CUP',
+        size: 'L',
+        topping: '',
+        quantity: 1,
+        ingredient: { id: 'CUP', name: 'Ly', unit: 'PIECE', stock: 100, version: 0 },
+      },
+    ]);
+
+    ingredientUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    orderIngredientCreateMany = jest.fn().mockResolvedValue({ count: 3 });
+
     findManyByIds = jest.fn().mockResolvedValue([{ id: 3, name: 'Cappuccino', price: 45000,
       stock: 10, sizes: [{ name: 'L', price: 10000 }], toppings: [{ name: 'Kem', price: 10000 }] }]);
     
-    // Đã bổ sung đầy đủ mock cho product.updateMany và product.findMany trong transaction tx
     const mockPrismaClient = {
       order: { findUnique, create },
       product: {
         findMany: productFindMany,
         updateMany: productUpdateMany,
+      },
+      productIngredient: {
+        findMany: productIngredientFindMany,
+      },
+      ingredient: {
+        updateMany: ingredientUpdateMany,
+      },
+      orderIngredient: {
+        createMany: orderIngredientCreateMany,
       },
     };
     
