@@ -153,3 +153,32 @@ Báo cáo này không xác nhận các Task 1–5 của cả nhóm đã hoàn t�
 - Kết quả kiểm tra chung: 5 suites, 17 tests frontend PASS;
   frontend typecheck không báo lỗi.
 - Chưa xác nhận tạo đơn và trừ kho với backend/database thật.
+
+## Kiểm tra thủ công trên trình duyệt — 30/10/2026
+
+Bản kiểm tra: b3d8c71, nhánh feature/tv3-checkout.
+Chạy frontend và backend local bằng npm.cmd run dev.
+Chưa tích hợp backend kho nguyên liệu TV4.
+
+Các tình huống người thực hiện đã kiểm tra:
+- Đăng nhập rồi trở lại giỏ: giữ đúng món, size, topping và số lượng.
+- Tạo đơn: chi tiết và tổng tiền khớp, trạng thái ban đầu PENDING.
+- Thanh toán mô phỏng thất bại: PAYMENT_FAILED, giỏ giữ nguyên.
+- Thử lại thành công: cùng mã đơn, chuyển PAID, tổng tiền không đổi.
+- Giỏ không thay đổi từ lúc tạo đơn: được xóa sau thanh toán thành công.
+- Lịch sử hiển thị đúng đơn đã thanh toán và số tiền.
+- Tạo đơn Americano rồi thêm Trà đào trước khi thanh toán:
+  đơn cũ chỉ chứa Americano; giỏ giữ cả hai món sau thanh toán.
+
+Giới hạn: khi giỏ đã thay đổi, hệ thống giữ toàn bộ giỏ,
+chưa tự trừ riêng những món thuộc đơn đã thanh toán.
+
+Đây là kiểm tra thủ công, không phải bộ E2E trình duyệt tự động.
+Chưa xác nhận hoạt động với backend kho nguyên liệu mới.
+
+### Build cuối ngày 30/10/2026
+
+- npm.cmd run build: backend NestJS và frontend Next.js thành công.
+- Exit code: 0.
+- Code được kiểm tra tại commit b3d8c71; thay đổi sau đó chỉ là tài liệu.
+- Kết quả này chưa bao gồm tích hợp backend kho nguyên liệu TV4.
