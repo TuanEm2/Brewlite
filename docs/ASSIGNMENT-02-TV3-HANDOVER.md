@@ -51,10 +51,11 @@ Giới hạn:
 
 Thiết lập Jest, jsdom và React Testing Library.
 
-15 test trong 3 file:
+16 test trong 4 file:
 - cart.test.tsx: 3 test.
 - checkout.test.tsx: 7 test.
 - orders.test.tsx: 5 test.
+- cart-inventory.test.tsx: 1 test.
 
 Phạm vi:
 - Giỏ trống, tăng/giảm số lượng, xóa món.
@@ -89,7 +90,6 @@ Chưa xác nhận kết quả CI trên GitHub cho nhánh Assignment 2.
   sau khi bổ sung đủ 15 test.
 - npm run build: build backend và frontend thành công trên bản
   af16ae8, gồm đủ 15 test frontend; exit code 0.
-  và 5 test đầu tiên; chưa chạy lại trên toàn bộ bản cuối.
 - Chưa chạy lại PostgreSQL integration/E2E cho nhánh Assignment 2.
 - Chưa xác nhận CI, production hoặc nghiệm thu toàn bộ Assignment 2.
 
@@ -128,3 +128,16 @@ Không dùng database production để chạy test.
 - Chạy kiểm tra cuối trên bản tích hợp và lưu minh chứng thực tế.
 
 Báo cáo này không xác nhận các Task 1–5 của cả nhóm đã hoàn tất.
+
+## 8. Bổ sung kiểm thử ngày 30/10/2026
+
+- Thêm cart-inventory.test.tsx: giả lập POST /orders trả HTTP 409
+  vì thiếu nguyên liệu.
+- Xác nhận giao diện hiển thị thông báo lỗi, giữ nguyên giỏ,
+  không chuyển sang checkout, không lưu đơn chờ mới
+  và cho phép thao tác thanh toán lại.
+- npm.cmd test -w @brewlite/frontend: 4 suites, 16 tests PASS.
+- npm.cmd run typecheck -w @brewlite/frontend: không báo lỗi.
+- Đây là test giao diện với API giả lập; chưa xác nhận nghiệp vụ
+  kho nguyên liệu bằng backend/database thật.
+- Chưa tích hợp nhánh TV4 vào nhánh TV3.
