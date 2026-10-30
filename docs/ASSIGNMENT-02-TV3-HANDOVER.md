@@ -51,11 +51,12 @@ Giới hạn:
 
 Thiết lập Jest, jsdom và React Testing Library.
 
-16 test trong 4 file:
+17 test trong 5 file:
 - cart.test.tsx: 3 test.
 - checkout.test.tsx: 7 test.
 - orders.test.tsx: 5 test.
 - cart-inventory.test.tsx: 1 test.
+- cart-create-order.test.tsx: 1 test.
 
 Phạm vi:
 - Giỏ trống, tăng/giảm số lượng, xóa món.
@@ -141,3 +142,14 @@ Báo cáo này không xác nhận các Task 1–5 của cả nhóm đã hoàn t�
 - Đây là test giao diện với API giả lập; chưa xác nhận nghiệp vụ
   kho nguyên liệu bằng backend/database thật.
 - Chưa tích hợp nhánh TV4 vào nhánh TV3.
+
+### Bổ sung luồng tạo đơn thành công
+
+- cart-create-order.test.tsx kiểm tra frontend gửi đúng lựa chọn,
+  số lượng, JWT và idempotency key.
+- Khi API giả lập trả đơn PENDING, giao diện chuyển tới checkout
+  theo ID nhận được, lưu liên kết đơn chờ và giữ nguyên giỏ.
+- Không gửi giá do frontend tự quyết định trong payload tạo đơn.
+- Kết quả kiểm tra chung: 5 suites, 17 tests frontend PASS;
+  frontend typecheck không báo lỗi.
+- Chưa xác nhận tạo đơn và trừ kho với backend/database thật.

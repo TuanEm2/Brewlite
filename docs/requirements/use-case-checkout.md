@@ -190,5 +190,31 @@ Sơ đồ dự kiến:
 Sau khi thống nhất SRS, cập nhật mapping:
 FR/NFR → UC-CHECKOUT → sơ đồ → code/API → test.
 
-Chưa ghi nhận các tiêu chí trên là đã test đạt.
-Kết quả kiểm thử sẽ được bổ sung bằng log và bằng chứng thực tế.
+### Đối chiếu kiểm thử TV3 ngày 30/10/2026
+
+Đã chạy trên máy phát triển:
+- Frontend: 5 test suites, 17 tests PASS.
+- Frontend typecheck: không báo lỗi.
+- API trong các test giao diện được giả lập.
+- Chưa kiểm thử tích hợp với backend kho nguyên liệu của TV4.
+- Mã AC là mã nội bộ; chưa thay thế mã FR/NFR chính thức của SRS.
+
+Các file test nằm trong frontend/__tests__/.
+
+| Tiêu chí | Minh chứng hiện có | Phần còn cần kiểm tra |
+|---|---|---|
+| AC-01 | cart.test.tsx: tăng/giảm số lượng, xóa món, cập nhật tổng | Kiểm tra thao tác trên trình duyệt thật |
+| AC-02 | cart.test.tsx: giỏ trống không gọi API tạo đơn | Kiểm tra với API thật |
+| AC-03 | cart.test.tsx: chuyển đăng nhập và giữ giỏ khi chưa có token | Luồng đăng nhập rồi quay lại giỏ |
+| AC-04 | cart-create-order.test.tsx: gửi đúng món và JWT, mở checkout theo ID API trả về, lưu đơn chờ và giữ giỏ | POST /orders thật: PENDING, giá và kho đúng |
+| AC-05 | cart-inventory.test.tsx: HTTP 409 hiện lỗi, giữ giỏ, không chuyển checkout | Backend không lưu đơn hoặc trừ kho một phần |
+| AC-06 | checkout.test.tsx: thanh toán thành công và hiển thị xác nhận | Thanh toán với API/database thật |
+| AC-07 | checkout.test.tsx: thất bại giữ giỏ và cho phép thử lại | Thất bại rồi thử lại thành công với API thật |
+| AC-08 | checkout.test.tsx: lỗi mạng rồi gửi lại cùng khóa thanh toán | Backend chống trùng; retry yêu cầu tạo đơn |
+| AC-09 | checkout.test.tsx: giữ giỏ đã thay đổi; kiểm tra tài khoản và voucher | Kiểm tra thao tác trên trình duyệt thật |
+| AC-10 | orders.test.tsx: gửi JWT và hiển thị lịch sử từ API giả lập | Hai tài khoản thật không xem được đơn của nhau |
+| AC-11 | Test giỏ/lịch sử trống, lỗi lịch sử 401/500 và lỗi thanh toán | Loading và các lỗi còn lại trên từng màn hình |
+| AC-12 | Chưa có test frontend riêng cho đơn không tồn tại/không thuộc khách | Kiểm tra giao diện và phân quyền backend |
+
+Không dùng kết quả test giao diện để kết luận kho nguyên liệu,
+transaction hoặc phân quyền backend đã đạt.
