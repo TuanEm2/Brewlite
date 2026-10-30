@@ -1,0 +1,38 @@
+# dependencies / workspace
+node_modules/
+**/node_modules/
+.npm/
+
+# Next.js and NestJS build outputs
+.next/
+**/.next/
+dist/
+**/dist/
+coverage/
+**/coverage/
+*.tsbuildinfo
+
+# local configuration and credentials
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+!.env.docker.example
+
+# debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+
+# operating system / IDE
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Prisma (TV2 owns schema/migrations; do NOT ignore Prisma files)
