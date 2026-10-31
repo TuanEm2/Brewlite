@@ -43,6 +43,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_PAYMENT_MODE: ${PAYMENT_MODE:-mock}
     restart: unless-stopped
     depends_on:
       - backend
@@ -50,6 +51,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_PAYMENT_MODE: ${PAYMENT_MODE:-mock}
     ports:
       - "127.0.0.1:3000:3000"
 
