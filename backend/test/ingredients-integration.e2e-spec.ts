@@ -267,7 +267,6 @@ describe('Webhook, Concurrency & Transaction Rollback Integration (E2E)', () => 
     );
 
     const results = await Promise.all(concurrentRequests);
-
     const successCount = results.filter((r) => r.status === 201 || r.status === 200).length;
     const conflictCount = results.filter((r) => r.status === 409 || r.status === 400).length;
 
