@@ -98,8 +98,18 @@ export default function MenuPage() {
                 className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden border border-amber-100/80 flex flex-col justify-between"
               >
                 <div className="p-6">
-                  <div className="w-full h-40 bg-amber-100 rounded-xl mb-4 overflow-hidden flex items-center justify-center text-4xl">
-                    🍹
+                  <div className="h-40 w-full overflow-hidden rounded-xl bg-amber-100 mb-4">
+                    <img
+                      src={product.imageUrl?.trim() || "/favicon.svg"}
+                      alt={`Ảnh đồ uống ${product.name}`}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                      onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = "/favicon.svg";
+                        event.currentTarget.className = "h-full w-full object-contain p-8";
+                      }}
+                    />
                   </div>
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="text-xl font-bold text-gray-900">{product.name}</h3>

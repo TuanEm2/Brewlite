@@ -115,6 +115,15 @@ export class OrdersService {
       }
       assertTransition(order.status, OrderStatus.CANCELLED);
 
+      // Real-money payOS refunds/link cancellation are not implemented.
+      // Never release reserved ingredients while an external payment can still arrive.
+      const externalCheckout = await tx.payosCheckout.findUnique({ where: { orderId } });
+      if (externalCheckout) {
+        throw new ConflictException(
+          'Đơn đã tạo giao dịch thanh toán thật; cần đối soát và xử lý hủy/hoàn tiền với nhà cung cấp.'
+        );
+      }
+
       // Lấy danh sách snapshot nguyên liệu đã lưu lúc tạo đơn
       const orderIngredients = await tx.orderIngredient.findMany({
         where: { orderId: orderId },

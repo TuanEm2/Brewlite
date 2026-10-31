@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import RealCheckoutPage from "./real-checkout";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "../../../store/auth-store";
@@ -57,7 +58,7 @@ type Notice = { kind: "failed" | "unknown" | "error"; text: string } | null;
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 
-export default function CheckoutPage() {
+function MockCheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
@@ -411,4 +412,11 @@ export default function CheckoutPage() {
       </div>
     </main>
   );
+}
+
+// Keep legacy UI for local mock demos. Real mode never calls /payments/mock.
+export default function CheckoutPage() {
+  return process.env.NEXT_PUBLIC_PAYMENT_MODE === "payos"
+    ? <RealCheckoutPage />
+    : <MockCheckoutPage />;
 }

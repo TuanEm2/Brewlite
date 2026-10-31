@@ -77,6 +77,7 @@ model Order {
   items             OrderItem[]
   payment           Payment?
   paymentAttempts   PaymentAttempt[]
+  payosCheckout     PayosCheckout?
   ingredientUsages  OrderIngredient[]
 
   
@@ -171,4 +172,17 @@ model PaymentAttempt {
   order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+// A single payOS payment link per Order. Never trust a browser redirect to mark an order paid.
+model PayosCheckout {
+  id            Int      @id @default(autoincrement())
+  orderId       Int      @unique
+  orderCode     Int      @unique
+  amount        Int
+  checkoutUrl   String?
+  paymentLinkId String?  @unique
+  status        String   @default("CREATING")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }

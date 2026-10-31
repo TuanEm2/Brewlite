@@ -1,0 +1,67 @@
+# BrewLite demo HTTPS deployment on Render.
+# Review docs/DEPLOY-RENDER-HTTPS.md before provisioning any resources.
+# IMPORTANT: Free tiers are for preview/testing, NOT live-money production.
+services:
+  - type: web
+    name: brewlite-tv1-api
+    runtime: docker
+    repo: https://github.com/TuanEm2/Brewlite
+    branch: feature/tv01-payos-from-tv04
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: off
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brewlite-tv1-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PAYMENT_MODE
+        value: mock
+      # Replace this with your actual Frontend HTTPS origin after first deploy.
+      - key: FRONTEND_URL
+        value: https://brewlite-tv1-web.onrender.com
+      # Safe public callback/return URL. Keep live credentials ONLY in Render secrets.
+      - key: PAYOS_RETURN_BASE_URL
+        value: https://brewlite-tv1-web.onrender.com
+      - key: PAYOS_ORDER_CODE_PREFIX
+        value: "260000000"
+
+  - type: web
+    name: brewlite-tv1-web
+    runtime: docker
+    repo: https://github.com/TuanEm2/Brewlite
+    branch: feature/tv01-payos-from-tv04
+    plan: free
+    region: singapore
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: off
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      # Next.js embeds NEXT_PUBLIC_* values at Docker image build time.
+      # Replace with your real Backend HTTPS URL and redeploy the web service.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://brewlite-tv1-api.onrender.com
+      - key: NEXT_PUBLIC_PAYMENT_MODE
+        value: mock
+
+databases:
+  - name: brewlite-tv1-db
+    plan: free
+    region: singapore
+    postgresMajorVersion: "16"
+    databaseName: brewlite
+    ipAllowList: []

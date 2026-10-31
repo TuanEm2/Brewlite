@@ -25,9 +25,15 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      FRONTEND_URL: http://localhost:3000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-brewlite}?schema=public
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in root .env}
+      PAYMENT_MODE: ${PAYMENT_MODE:-mock}
+      PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-}
+      PAYOS_API_KEY: ${PAYOS_API_KEY:-}
+      PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
+      PAYOS_RETURN_BASE_URL: ${PAYOS_RETURN_BASE_URL:-}
+      PAYOS_ORDER_CODE_PREFIX: ${PAYOS_ORDER_CODE_PREFIX:-260000000}
     ports:
       - "127.0.0.1:4000:4000"
 
@@ -36,14 +42,16 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_PAYMENT_MODE: ${PAYMENT_MODE:-mock}
     restart: unless-stopped
     depends_on:
       - backend
     environment:
       NODE_ENV: production
       PORT: 3000
-      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_PAYMENT_MODE: ${PAYMENT_MODE:-mock}
     ports:
       - "127.0.0.1:3000:3000"
 
