@@ -1,0 +1,8 @@
+node_modules
+.next
+dist
+.git
+.idea
+.vscode
+*.log
+npm-debug.log*

@@ -1,0 +1,27 @@
+BREWLITE - SOURCE SPRINT 1 + 2 + PHAN TV1 SPRINT 3
+================================================
+
+1) Mo thu muc nay trong VS Code (thu muc co package.json).
+2) Can Node.js >= 22.22.3 va npm >= 10; PostgreSQL dang chay.
+3) Terminal PowerShell:
+   npm ci
+   Copy-Item backend/.env.example backend/.env
+   Copy-Item frontend/.env.example frontend/.env.local
+   (Neu da co .env thi KHONG ghi de; chinh DATABASE_URL/JWT_SECRET theo may.)
+4) CAP NHAT DB CU, KHONG XOA DU LIEU:
+   npm run prisma:deploy -w @brewlite/backend
+5) Kiem tra:
+   npm run typecheck
+   npm run test
+   npm run build
+6) Chay:
+   npm run dev
+7) Tren browser: localhost:3000 -> Menu -> Cart -> Login ->
+   Dat hang -> Thanh toan mo phong (QR/Card, SUCCESS/FAILURE).
+
+KHONG CHAY prisma:seed, prisma:reset TREN DATABASE CU CO DON HANG!
+KHONG GHI DE backend/.env CO MAT KHAU CUA BAN.
+KHONG PUSH/GIT MERGE: DAY LA FILE SOURCE DOC LAP.
+
+Mo docs/SPRINT-03-TASK-08-TV1.md de doc chi tiet cac route API,
+test, pham vi TV1, phan Task 9/10 cho nhung thanh vien con lai.
