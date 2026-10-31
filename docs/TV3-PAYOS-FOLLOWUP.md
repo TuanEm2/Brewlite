@@ -1,6 +1,6 @@
 # TV3 — timeout, hết hạn và đồng bộ payOS
 
-Nhánh: feature/tv03-payos-followup. Tiếp nối commit c84c712 từ bản bàn giao integration/payos-team-handoff. Chưa push/deploy.
+Nhánh: feature/tv03-payos-followup. Tiếp nối commit c84c712 từ bản bàn giao integration/payos-team-handoff. Nhánh bàn giao để review; chưa deploy.
 
 ## Phương án và thay đổi
 
@@ -31,7 +31,7 @@ Chạy: npm run typecheck; npm test; npm run build; npm run test:e2e.
 ## Kết quả xác minh
 
 - Typecheck toàn dự án: đạt. Build backend và frontend: đạt.
-- Unit test: 183/183 đạt (16 suites), gồm 14 test mới.
+- Unit test sau sửa nội bộ: 187/187 đạt (16 suites), gồm 18 test mới so với bản bàn giao ban đầu.
 - 82 e2e cũ đạt; 3 e2e TV3 mới đạt ở lần chạy riêng sau khi sửa fixture theo schema. Lần chạy toàn bộ ban đầu báo lỗi biên dịch fixture mới (đã sửa), không phải lỗi runtime ứng dụng.
 - Các kiểm thử không dùng API keys/thanh toán thật.
 
@@ -41,3 +41,5 @@ Chạy: npm run typecheck; npm test; npm run build; npm run test:e2e.
 - Cache đồng bộ lưu cả thành công và thất bại. Trong cooldown, vẫn trả lỗi trước đó cho đơn còn chờ để frontend hiện tại không xóa nhầm cảnh báo; không gọi provider liên tục. Nếu webhook đã đổi đơn sang trạng thái đã thanh toán, trạng thái mới được trả ngay.
 - Không thêm/sửa endpoint hoặc trường response; không thay schema/migration, TTL, frontend, hoàn kho, voucher hay cách cộng điểm. Chỉ sửa gateway/service và test payOS.
 - Chưa xử lý tự động bản ghi CREATING đã kẹt từ trước hoặc request có thể đã gửi tới provider; vẫn giữ quy tắc đối soát để tránh tạo giao dịch trùng. Hạn cố định trong DB và đếm ngược theo giờ server được hoãn vì cần phối hợp TV1/TV2.
+
+- Xác minh sau sửa nội bộ: typecheck toàn dự án, build backend và 3 e2e TV3 đạt; test thử lại sau sửa cấu hình cũng đạt.
