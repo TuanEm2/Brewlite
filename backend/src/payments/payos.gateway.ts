@@ -51,6 +51,11 @@ export class PayosGateway {
     return { clientId, apiKey, checksumKey };
   }
 
+  /** Local validation only; safe to run before reserving a checkout in the database. */
+  assertConfigured(): void {
+    this.config();
+  }
+
   private hash(value: string, key: string): string {
     return createHmac('sha256', key).update(value).digest('hex');
   }

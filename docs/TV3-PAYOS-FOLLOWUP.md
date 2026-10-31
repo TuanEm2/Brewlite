@@ -34,3 +34,10 @@ Chạy: npm run typecheck; npm test; npm run build; npm run test:e2e.
 - Unit test: 183/183 đạt (16 suites), gồm 14 test mới.
 - 82 e2e cũ đạt; 3 e2e TV3 mới đạt ở lần chạy riêng sau khi sửa fixture theo schema. Lần chạy toàn bộ ban đầu báo lỗi biên dịch fixture mới (đã sửa), không phải lỗi runtime ứng dụng.
 - Các kiểm thử không dùng API keys/thanh toán thật.
+
+## Sửa nội bộ sau review — giữ tương thích với nhóm
+
+- Kiểm tra cấu hình payOS trước khi tạo bản ghi CREATING. Lỗi thiếu cấu hình không giữ lại checkout mới; sau khi sửa cấu hình, cùng đơn có thể thử tạo link lần đầu.
+- Cache đồng bộ lưu cả thành công và thất bại. Trong cooldown, vẫn trả lỗi trước đó cho đơn còn chờ để frontend hiện tại không xóa nhầm cảnh báo; không gọi provider liên tục. Nếu webhook đã đổi đơn sang trạng thái đã thanh toán, trạng thái mới được trả ngay.
+- Không thêm/sửa endpoint hoặc trường response; không thay schema/migration, TTL, frontend, hoàn kho, voucher hay cách cộng điểm. Chỉ sửa gateway/service và test payOS.
+- Chưa xử lý tự động bản ghi CREATING đã kẹt từ trước hoặc request có thể đã gửi tới provider; vẫn giữ quy tắc đối soát để tránh tạo giao dịch trùng. Hạn cố định trong DB và đếm ngược theo giờ server được hoãn vì cần phối hợp TV1/TV2.

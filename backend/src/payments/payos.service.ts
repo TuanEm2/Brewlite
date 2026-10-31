@@ -9,6 +9,12 @@ import { paymentTransitionPath } from '../orders/order-state';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosGateway, VerifiedPayosWebhook } from './payos.gateway';
 
+const SYNC_COOLDOWN_MS = 10_000;
+const MAX_SYNC_RESULTS = 1000;
+type SyncResult = { checkedAt: number } & (
+  { ok: true } | { ok: false; error: unknown }
+);
+
 function canPay(status: OrderStatus): boolean {
   try {
     paymentTransitionPath(status, OrderStatus.PAID);
@@ -62,6 +68,9 @@ export class PayosService {
         if (saved.amount !== order.total) throw new ConflictException('Số tiền đơn đã thay đổi.');
         return { checkout: saved, isNew: false, expiresAt: paymentDeadline(order.createdAt) };
       }
+      // Reject local configuration errors before persisting CREATING.
+      // Once a provider request is sent, its outcome may still need reconciliation.
+      this.gateway.assertConfigured();
       const created = await tx.payosCheckout.create({
         data: { orderId, orderCode: this.orderCode(orderId), amount: order.total },
       });
@@ -130,20 +139,39 @@ export class PayosService {
   }
 
   private readonly syncing = new Map<number, Promise<void>>();
-  private readonly checkedAt = new Map<number, number>();
+  private readonly syncResults = new Map<number, SyncResult>();
 
   async syncOrder(orderId: number, force = false): Promise<void> {
     const running = this.syncing.get(orderId);
     if (running) return running;
-    if (!force && Date.now() - (this.checkedAt.get(orderId) ?? 0) < 10_000) return;
+    const previous = this.syncResults.get(orderId);
+    if (!force && previous && Date.now() - previous.checkedAt < SYNC_COOLDOWN_MS) {
+      if (!previous.ok) {
+        // A webhook may have completed payment since the failed provider request.
+        const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
+        if (order && isAwaitingPayment(order.status)) throw previous.error;
+        this.syncResults.delete(orderId);
+      }
+      return;
+    }
     const task = this.reconcile(orderId);
     this.syncing.set(orderId, task);
     try {
       await task;
+      this.rememberSyncResult(orderId, { checkedAt: Date.now(), ok: true });
+    } catch (error: unknown) {
+      this.rememberSyncResult(orderId, { checkedAt: Date.now(), ok: false, error });
+      throw error;
     } finally {
-      this.checkedAt.set(orderId, Date.now());
-      if (this.checkedAt.size > 1000) this.checkedAt.delete(this.checkedAt.keys().next().value!);
       this.syncing.delete(orderId);
+    }
+  }
+
+  private rememberSyncResult(orderId: number, result: SyncResult): void {
+    this.syncResults.delete(orderId);
+    this.syncResults.set(orderId, result);
+    if (this.syncResults.size > MAX_SYNC_RESULTS) {
+      this.syncResults.delete(this.syncResults.keys().next().value!);
     }
   }
 

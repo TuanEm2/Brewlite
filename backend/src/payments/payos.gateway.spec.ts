@@ -52,6 +52,13 @@ describe('PayosGateway signed webhook', () => {
     await expect(gateway.getPaymentLink(21)).rejects.toThrow('Không đối chiếu');
   });
 
+  it('checks missing configuration locally without making an HTTP request', () => {
+    delete process.env.PAYOS_API_KEY;
+    const fetchMock = jest.spyOn(global, 'fetch');
+    expect(() => gateway.assertConfigured()).toThrow('Thiếu cấu hình');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   const signed = (data: Record<string, unknown>, success = true) => ({
     code: '00', desc: 'success', success, data,
     signature: createHmac('sha256', 'test-checksum-only')
