@@ -80,10 +80,11 @@ export class PayosGateway {
   }
 
   async createPaymentLink(data: {
-    orderCode: number; amount: number; description: string; returnUrl: string; cancelUrl: string;
+    orderCode: number; amount: number; description: string; returnUrl: string; cancelUrl: string; expiredAt?: number;
   }): Promise<PayosLink> {
     const { checksumKey } = this.config();
-    const signature = this.hash(payosDataToSign(data), checksumKey);
+    const { amount, cancelUrl, description, orderCode, returnUrl } = data;
+    const signature = this.hash(payosDataToSign({ amount, cancelUrl, description, orderCode, returnUrl }), checksumKey);
     const body = await this.call('/v2/payment-requests', {
       method: 'POST', body: { ...data, signature },
     });
@@ -100,13 +101,20 @@ export class PayosGateway {
   }
 
   /** Recover provider checkout after a timeout; never request a second payment for the same order. */
-  async getPaymentLink(orderCode: number): Promise<{ id: string; status: string; amount: number }> {
+  async getPaymentLink(orderCode: number): Promise<{ id: string; status: string; amount: number; amountPaid: number }> {
     const body = await this.call('/v2/payment-requests/' + encodeURIComponent(String(orderCode)));
     if (body.orderCode !== orderCode || typeof body.id !== 'string' ||
-        typeof body.status !== 'string' || typeof body.amount !== 'number') {
+        typeof body.status !== 'string' || !Number.isSafeInteger(body.amount) ||
+        !Number.isSafeInteger(body.amountPaid) || Number(body.amountPaid) < 0) {
       throw new ServiceUnavailableException('Không đối chiếu được giao dịch payOS.');
     }
-    return { id: body.id, status: body.status, amount: body.amount };
+    return { id: body.id, status: body.status, amount: body.amount as number, amountPaid: body.amountPaid as number };
+  }
+
+  async cancelPaymentLink(orderCode: number): Promise<void> {
+    await this.call('/v2/payment-requests/' + encodeURIComponent(String(orderCode)) + '/cancel', {
+      method: 'POST', body: { cancellationReason: 'BrewLite: het han thanh toan' },
+    });
   }
 
   verifyWebhook(input: unknown): VerifiedPayosWebhook {

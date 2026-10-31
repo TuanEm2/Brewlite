@@ -202,6 +202,16 @@ function MockCheckoutPage() {
             ✓
           </p>
           <h1 className="mt-4 text-2xl font-extrabold text-gray-900">Đặt hàng thành công</h1>
+          <ul className="mt-5 divide-y divide-amber-100 text-left text-sm">
+            {order.items?.map((item) => (
+              <li key={item.id} className="flex justify-between gap-3 py-2">
+                <span>{item.productName} {item.size} ×{item.quantity}
+                  {item.toppings.length > 0 && <span className="block text-xs text-gray-500">{item.toppings.map((t) => t.name).join(", ")}</span>}
+                </span>
+                <strong>{formatVnd(item.lineTotal)}</strong>
+              </li>
+            ))}
+          </ul>
           <dl className="mt-5 space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-gray-600">Mã đơn</dt>

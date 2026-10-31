@@ -14,6 +14,9 @@ type Status = {
   amount: number;
   checkoutUrl: string | null;
   providerStatus: string | null;
+  expiresAt: string;
+  expired: boolean;
+  items: Array<{ productName: string; size: string; quantity: number; lineTotal: number }>;
 };
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 
@@ -26,6 +29,9 @@ export default function RealCheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  const remaining = info ? Math.max(0, Math.ceil((Date.parse(info.expiresAt) - now) / 1000)) : 0;
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -38,6 +44,7 @@ export default function RealCheckoutPage() {
     }
     if (!response.ok) throw new Error("Không đọc được trạng thái thanh toán.");
     setInfo((await response.json()) as Status);
+    setError("");
   }, [token, id, router]);
 
   useEffect(() => {
@@ -52,7 +59,7 @@ export default function RealCheckoutPage() {
       if (!cancelled) setLoading(false);
     });
     const interval = window.setInterval(() => {
-      void refresh().catch(() => {});
+      void refresh().catch(() => setError("Chưa đồng bộ được với cổng thanh toán. Hệ thống sẽ thử lại; chưa thể kết luận giao dịch thất bại."));
     }, 5000);
     return () => { cancelled = true; window.clearInterval(interval); };
   }, [token, id, refresh, router]);
@@ -101,20 +108,28 @@ export default function RealCheckoutPage() {
         {info && (
           <div className="mt-5 space-y-3">
             <p>Đơn hàng: <strong>#{info.orderId}</strong></p>
+            <ul className="divide-y divide-amber-100 text-sm">
+              {info.items.map((item, index) => <li key={index} className="flex justify-between gap-3 py-2">
+                <span>{item.productName} {item.size} ×{item.quantity}</span><strong>{formatVnd(item.lineTotal)}</strong>
+              </li>)}
+            </ul>
             <p>Số tiền: <strong>{formatVnd(info.amount)}</strong></p>
             <p>Trạng thái: <strong>{info.status === "PAID" ? "Đã nhận xác nhận thanh toán" : info.status}</strong></p>
             {info.status === "PAID" ? (
-              <p className="rounded-xl bg-green-50 p-4 text-green-800">✓ Thanh toán đã được Backend xác nhận qua webhook có chữ ký hợp lệ.</p>
+              <p className="rounded-xl bg-green-50 p-4 text-green-800">✓ Thanh toán đã được xác nhận với payOS.</p>
             ) : ["PENDING", "PAYMENT_FAILED"].includes(info.status) ? (
               <>
                 <p className="text-sm text-gray-600">Chọn thanh toán để tới trang VietQR do payOS cung cấp. BrewLite chỉ xác nhận sau khi nhận thông báo giao dịch thực tế.</p>
-                <button type="button" disabled={creating} onClick={() => void openPayment()}
+                <p className="text-sm font-semibold text-amber-900">{remaining > 0
+                  ? 'Thời gian thanh toán còn lại: ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0')
+                  : 'Đã hết thời gian thanh toán. Đang đối soát với payOS, vui lòng chờ xác nhận.'}</p>
+                <button type="button" disabled={creating || remaining === 0} onClick={() => void openPayment()}
                   className="w-full rounded-xl bg-amber-800 px-5 py-3 font-semibold text-white disabled:opacity-50">
                   {creating ? "Đang tạo yêu cầu..." : "Thanh toán bằng VietQR"}
                 </button>
               </>
             ) : (
-              <p className="rounded-xl bg-gray-100 p-4">Đơn hàng không thể thanh toán ở trạng thái này.</p>
+              <p className="rounded-xl bg-gray-100 p-4">{info.expired ? "Đơn đã hết hạn hoặc link thanh toán đã bị hủy. Bạn có thể đặt đơn mới." : "Đơn hàng không thể thanh toán ở trạng thái này."}</p>
             )}
           </div>
         )}
