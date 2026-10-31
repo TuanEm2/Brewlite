@@ -26,6 +26,7 @@ import {
 type OrderItem = {
   id: number;
   productId: number;
+  productName: string;
   size: string;
   toppings: Array<{ name: string; price: number }>;
   quantity: number;
@@ -62,7 +63,6 @@ function MockCheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
-  const cartItems = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
 
   const [mounted, setMounted] = useState(false);
@@ -190,9 +190,6 @@ function MockCheckoutPage() {
     }
   }
 
-  const productName = (productId: number) =>
-    cartItems.find((item) => item.productId === productId)?.name ?? `Đồ uống #${productId}`;
-
   // ---------- Màn hình xác nhận (wireframe 5) ----------
   if (order?.status === "PAID") {
     return (
@@ -293,7 +290,7 @@ function MockCheckoutPage() {
                 {order.items.map((item) => (
                   <li key={item.id} className="flex justify-between gap-3 py-2">
                     <span>
-                      {productName(item.productId)} {item.size} ×{item.quantity}
+                      {item.productName} {item.size} ×{item.quantity}
                       {item.toppings.length > 0 && (
                         <span className="block text-xs text-gray-500">{item.toppings.map((t) => t.name).join(", ")}</span>
                       )}

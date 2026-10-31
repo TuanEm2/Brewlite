@@ -26,6 +26,7 @@ describe('priceLine', () => {
     const line = priceLine(traDao, 'S', [], 3);
     expect(line).toEqual({
       productId: 4,
+      productName: 'Trà đào',
       size: 'S',
       toppings: [],
       quantity: 3,

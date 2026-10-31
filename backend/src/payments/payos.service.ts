@@ -3,8 +3,18 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { paymentTransitionPath } from '../orders/order-state';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosGateway, VerifiedPayosWebhook } from './payos.gateway';
+
+function canPay(status: OrderStatus): boolean {
+  try {
+    paymentTransitionPath(status, OrderStatus.PAID);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 @Injectable()
 export class PayosService {
@@ -41,7 +51,7 @@ export class PayosService {
       `;
       if (!locked.length) throw new NotFoundException('Không tìm thấy đơn của bạn.');
       const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
-      if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED) {
+      if (!canPay(order.status)) {
         throw new ConflictException('Đơn không ở trạng thái chờ thanh toán.');
       }
       const saved = await tx.payosCheckout.findUnique({ where: { orderId } });
@@ -136,8 +146,8 @@ export class PayosService {
       if (order.status === OrderStatus.PAID && previous?.idempotencyKey === uniqueKey) {
         return { received: true, replayed: true };
       }
-      if (previous || order.status === OrderStatus.PAID ||
-          (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED)) {
+      // Task 10 (TV3): ghi PAID qua máy trạng thái; PAYMENT_FAILED đi "thử lại" về PENDING rồi mới PAID.
+      if (previous || !canPay(order.status)) {
         this.logger.error('Real payment for an order in a conflicting state: manual reconciliation.');
         throw new ConflictException('Đơn không thể tự ghi nhận thanh toán; cần đối soát.');
       }

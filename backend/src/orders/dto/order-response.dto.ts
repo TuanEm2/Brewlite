@@ -4,6 +4,8 @@ import { PricedOption } from '../../products/dto/product-response.dto';
 export interface OrderItemResponseDto {
   id: number;
   productId: number;
+  /** Tên đồ uống tại thời điểm đặt (in trên hóa đơn). */
+  productName: string;
   size: string;
   toppings: PricedOption[];
   quantity: number;

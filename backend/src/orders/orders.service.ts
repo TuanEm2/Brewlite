@@ -10,6 +10,7 @@ import { PricedOption } from '../products/dto/product-response.dto';
 import { ProductsService } from '../products/products.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
+import { isAwaitingPayment } from './order-expiry';
 import { assertTransition } from './order-state';
 import { orderTotal, priceLine } from './pricing';
 import { applyVoucher } from './voucher';
@@ -124,31 +125,7 @@ export class OrdersService {
         );
       }
 
-      // Lấy danh sách snapshot nguyên liệu đã lưu lúc tạo đơn
-      const orderIngredients = await tx.orderIngredient.findMany({
-        where: { orderId: orderId },
-      });
-
-      // Chỉ hoàn kho nếu có snapshot OrderIngredient (tránh hoàn bừa cho đơn hàng cũ không có dữ liệu định lượng)
-      if (orderIngredients.length > 0) {
-        const ingredientQuantities = new Map<number, number>();
-        for (const oi of orderIngredients) {
-          ingredientQuantities.set(
-            oi.ingredientId,
-            (ingredientQuantities.get(oi.ingredientId) ?? 0) + Number(oi.quantity),
-          );
-        }
-
-        for (const [ingredientId, quantity] of [...ingredientQuantities].sort(([a], [b]) => a - b)) {
-          await tx.ingredient.update({
-            where: { id: ingredientId },
-            data: {
-              stock: { increment: quantity },
-              version: { increment: 1 },
-            },
-          });
-        }
-      }
+      await releaseReservedIngredients(tx, orderId);
 
       // Điểm tích lũy chỉ cộng sau khi PAID. Thu hồi lại khi đơn đã thanh toán bị hủy.
       if (order.status === OrderStatus.PAID && order.userId !== null) {
@@ -165,6 +142,38 @@ export class OrdersService {
         include: ORDER_INCLUDE,
       });
       return toResponse(cancelled);
+    });
+  }
+
+  /**
+   * Hết hạn một đơn chưa thanh toán (TV3): PENDING/PAYMENT_FAILED → CANCELLED và hoàn kho nguyên liệu.
+   *
+   * Chỉ gọi khi chắc chắn không còn tiền thật nào có thể tới: đơn không có link payOS, hoặc payOS
+   * đã xác nhận link CANCELLED/EXPIRED (truyền `providerStatus` để ghi lại vào PayosCheckout).
+   *
+   * @returns false nếu đơn không còn chờ thanh toán (đã PAID, đã hủy…) nên không làm gì.
+   */
+  async expireUnpaidOrder(orderId: number, providerStatus?: 'CANCELLED' | 'EXPIRED'): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
+      `;
+      if (locked.length === 0) return false;
+      const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      if (!isAwaitingPayment(order.status)) return false;
+
+      const checkout = await tx.payosCheckout.findUnique({ where: { orderId } });
+      if (checkout && !providerStatus) {
+        throw new ConflictException('Đơn có link payOS: phải xác nhận trạng thái với payOS trước khi hết hạn.');
+      }
+
+      assertTransition(order.status, OrderStatus.CANCELLED);
+      await releaseReservedIngredients(tx, orderId);
+      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED } });
+      if (checkout && providerStatus) {
+        await tx.payosCheckout.update({ where: { orderId }, data: { status: providerStatus } });
+      }
+      return true;
     });
   }
 
@@ -300,6 +309,7 @@ export class OrdersService {
             items: {
               create: lines.map((line) => ({
                 productId: line.productId,
+                productName: line.productName,
                 size: line.size,
                 toppings: line.toppings as unknown as Prisma.InputJsonValue,
                 qty: line.quantity,
@@ -342,6 +352,24 @@ export class OrdersService {
     }
 
     return toResponse(order);
+  }
+}
+
+/**
+ * Hoàn kho nguyên liệu theo snapshot OrderIngredient đã lưu lúc tạo đơn (khóa theo thứ tự id tăng dần).
+ * Đơn cũ không có snapshot thì không hoàn, tránh cộng bừa kho.
+ */
+async function releaseReservedIngredients(tx: Prisma.TransactionClient, orderId: number): Promise<void> {
+  const orderIngredients = await tx.orderIngredient.findMany({ where: { orderId } });
+  const quantities = new Map<number, number>();
+  for (const oi of orderIngredients) {
+    quantities.set(oi.ingredientId, (quantities.get(oi.ingredientId) ?? 0) + Number(oi.quantity));
+  }
+  for (const [ingredientId, quantity] of [...quantities].sort(([a], [b]) => a - b)) {
+    await tx.ingredient.update({
+      where: { id: ingredientId },
+      data: { stock: { increment: quantity }, version: { increment: 1 } },
+    });
   }
 }
 
@@ -389,6 +417,7 @@ function toResponse(order: OrderWithItems): OrderResponseDto {
     items: order.items.map((item) => ({
       id: item.id,
       productId: item.productId,
+      productName: item.productName,
       size: item.size,
       toppings: item.toppings as unknown as PricedOption[],
       quantity: item.qty,

@@ -135,6 +135,8 @@ model OrderItem {
   id          Int     @id @default(autoincrement())
   orderId     Int
   productId   Int
+  /// Tên đồ uống tại thời điểm đặt, in trên hóa đơn/lịch sử kể cả khi sản phẩm đổi tên sau này.
+  productName String
   size        String
   /// Topping đã chọn kèm phụ thu, ví dụ [{ "name": "Kem", "price": 10000 }].
   toppings    Json    @default("[]")
