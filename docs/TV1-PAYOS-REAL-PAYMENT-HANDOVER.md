@@ -65,3 +65,44 @@ KHÔNG chạy prisma seed trên DB thật: seed của dự án TRUNCATE dữ li�
 https://payos.vn/docs/api/
 https://payos.vn/docs/tich-hop-webhook/kiem-tra-du-lieu-voi-signature/
 https://payos.vn/docs/moi-truong-test/
+
+## Cập nhật 31/10/2026 — HTTPS Render đang hoạt động, bước chuẩn bị payOS
+
+**Hiện trạng:** Frontend `https://brewlite-tv1-web.onrender.com`, Backend `https://brewlite-tv1-api.onrender.com`; người dùng đã xác nhận luồng Menu/đơn hàng Mock chạy được. Render Blueprint vẫn đặt `PAYMENT_MODE=mock` và `NEXT_PUBLIC_PAYMENT_MODE=mock`, nên đơn `PAID` hiện tại là **mock**, không chứng minh tiền được nhận qua ngân hàng.
+
+### Kênh thanh toán và thông tin bí mật
+
+1. Người đứng tên đủ điều kiện đăng ký, xác thực và liên kết tài khoản nhận tiền trên https://my.payos.vn. Không dùng giấy tờ/tài khoản người khác để vượt kiểm tra danh tính.
+2. Tạo **Kênh thanh toán**. Ba khóa `Client ID`, `API Key`, `Checksum Key` chỉ nhập trực tiếp vào **Render → brewlite-tv1-api → Environment**. Không lưu trong GitHub, biến `NEXT_PUBLIC_*`, ảnh chụp hay chat.
+3. **Đường dẫn webhook** của source đã viết là:
+   `https://brewlite-tv1-api.onrender.com/payments/payos/webhook`
+   Đây là endpoint **POST** nhận JSON và chữ ký do payOS gửi; truy cập trực tiếp bằng trình duyệt (GET) báo 404 là bình thường.
+4. `PAYOS_RETURN_BASE_URL=https://brewlite-tv1-web.onrender.com` đã được thêm vào `render.yaml` nhưng chưa cần bật chế độ live.
+5. payOS chính thức không cung cấp sandbox riêng; API production có thể tạo giao dịch **tiền thật**. Do not use a real merchant key until ownership, webhook verification, reliable hosting, merchant authorization and reconciliation have been checked.
+
+### Khi vận hành trên hạ tầng production ổn định, sau khi người sở hữu merchant cho phép
+
+**Backend / Render Environment**
+
+- `FRONTEND_URL=https://brewlite-tv1-web.onrender.com`
+- `PAYOS_RETURN_BASE_URL=https://brewlite-tv1-web.onrender.com`
+- `PAYOS_CLIENT_ID=<KEY_FROM_PAYOS_DASHBOARD>`
+- `PAYOS_API_KEY=<SECRET_FROM_PAYOS_DASHBOARD>`
+- `PAYOS_CHECKSUM_KEY=<SECRET_FROM_PAYOS_DASHBOARD>`
+- `PAYOS_ORDER_CODE_PREFIX=260000000`
+- `PAYMENT_MODE=payos`
+
+**Frontend / Render Environment**
+
+- `NEXT_PUBLIC_API_URL=https://brewlite-tv1-api.onrender.com`
+- `NEXT_PUBLIC_PAYMENT_MODE=payos`
+
+Sau khi kiểm tra bảo mật và hạ tầng, lưu và redeploy Backend; chọn **Save, rebuild, and deploy** cho Frontend (Next.js compile `NEXT_PUBLIC_*` ở build time). Blueprint hiện định nghĩa `mock` ở cả hai dịch vụ; nếu sync Blueprint sau khi đổi trong Render thì kiểm tra ngay trạng thái để tránh reset ngoài dự kiến. Khi quyết định đưa production vào hoạt động, cập nhật `render.yaml` có kiểm soát, vẫn **không đưa khóa bí mật vào file**.
+
+**Đăng ký webhook:** dùng chức năng kênh thanh toán của payOS hoặc API chính thức `POST https://api-merchant.payos.vn/confirm-webhook` (chỉ quản trị với thông tin được cấp; không đăng khóa vào mã nguồn). Đăng ký đúng URL nêu trên, kiểm tra phản hồi mẫu có signature. Backend bỏ qua mẫu không trùng orderCode đã tạo, không ghi payment giả.
+
+**Kiểm tra thực tế:** tạo một đơn **mới** sau khi chuyển mode (đơn đã PAID bằng mock không thể dùng lại để tạo giao dịch thật). Trang `/checkout/<id>` phải hiển thị nút VietQR, redirect tới trang payOS; trạng thái PAID chỉ khi webhook được xác minh. Kiểm tra transaction và amount chính xác trong PayOS Dashboard/DB. Khi chưa xác minh hoặc có lỗi timeout, giữ trạng thái chưa được xác nhận; **không ấn nút đánh dấu PAID thủ công**.
+
+**Không bật production với Render Free:** gói Free ngủ sau 15 phút không có traffic, có thể khiến webhook timeout, database Free hết hạn sau 30 ngày, không có backup. Phải dùng dịch vụ/tier đáng tin cậy, backup, giám sát, đối soát và quy trình xử lý hoàn tiền/hủy giao dịch trước khi nhận tiền thật.
+
+Nguồn: https://payos.vn/docs/moi-truong-test/ ; https://payos.vn/docs/api/ ; https://render.com/docs/free ; https://render.com/docs/configure-environment-variables .
