@@ -28,6 +28,12 @@ services:
       FRONTEND_URL: http://localhost:3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-brewlite}?schema=public
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in root .env}
+      PAYMENT_MODE: ${PAYMENT_MODE:-mock}
+      PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-}
+      PAYOS_API_KEY: ${PAYOS_API_KEY:-}
+      PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
+      PAYOS_RETURN_BASE_URL: ${PAYOS_RETURN_BASE_URL:-}
+      PAYOS_ORDER_CODE_PREFIX: ${PAYOS_ORDER_CODE_PREFIX:-260000000}
     ports:
       - "127.0.0.1:4000:4000"
 
