@@ -29,6 +29,9 @@ services:
       # Replace this with your actual Frontend HTTPS origin after first deploy.
       - key: FRONTEND_URL
         value: https://brewlite-tv1-web.onrender.com
+      # Safe public callback/return URL. Keep live credentials ONLY in Render secrets.
+      - key: PAYOS_RETURN_BASE_URL
+        value: https://brewlite-tv1-web.onrender.com
       - key: PAYOS_ORDER_CODE_PREFIX
         value: "260000000"
 
