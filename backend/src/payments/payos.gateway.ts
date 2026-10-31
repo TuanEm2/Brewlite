@@ -89,7 +89,8 @@ export class PayosGateway {
     });
     if (body.orderCode !== data.orderCode || body.amount !== data.amount ||
         typeof body.checkoutUrl !== 'string' || typeof body.paymentLinkId !== 'string' ||
-        !body.checkoutUrl.startsWith('https://')) {
+        new URL(body.checkoutUrl).hostname !== 'pay.payos.vn' ||
+        new URL(body.checkoutUrl).protocol !== 'https:') {
       throw new ServiceUnavailableException('payOS trả về link thanh toán không hợp lệ.');
     }
     return {
@@ -120,7 +121,8 @@ export class PayosGateway {
       throw new BadRequestException('Chữ ký webhook payOS không hợp lệ.');
     }
     const data = input.data;
-    if (!Number.isSafeInteger(data.orderCode) || !Number.isSafeInteger(data.amount) ||
+    if (typeof data.orderCode !== 'number' || typeof data.amount !== 'number' ||
+        !Number.isSafeInteger(data.orderCode) || !Number.isSafeInteger(data.amount) ||
         typeof data.paymentLinkId !== 'string' || typeof data.reference !== 'string') {
       throw new BadRequestException('Webhook payOS thiếu trường giao dịch.');
     }
