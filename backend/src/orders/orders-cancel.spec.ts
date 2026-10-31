@@ -23,6 +23,7 @@ function fixture(status: OrderStatus, userId = 12) {
       })),
     },
     product: { update: jest.fn().mockResolvedValue({}) },
+    payosCheckout: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { update: jest.fn().mockResolvedValue({}) },
     productIngredient: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -65,6 +66,13 @@ describe('Cancel order — stock and loyalty integrity', () => {
     expect(tx.user.update).toHaveBeenCalledWith({
       where: { id: 12 }, data: { loyaltyPoints: { decrement: 5 } },
     });
+  });
+
+  it('blocks cancellation of any order with a real payOS checkout until refund reconciliation', async () => {
+    const { service, tx } = fixture(OrderStatus.PENDING);
+    tx.payosCheckout.findUnique.mockResolvedValue({ orderId: 44, status: 'PENDING' });
+    await expect(service.cancelOwnedOrder(12, 44)).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
   });
 
   it('rejects another user without modifying inventory', async () => {
