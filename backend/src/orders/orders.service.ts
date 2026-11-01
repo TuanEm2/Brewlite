@@ -169,7 +169,10 @@ export class OrdersService {
 
       assertTransition(order.status, OrderStatus.CANCELLED);
       await releaseReservedIngredients(tx, orderId);
-      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED } });
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELLED, paymentExpiredAt: new Date() },
+      });
       if (checkout && providerStatus) {
         await tx.payosCheckout.update({ where: { orderId }, data: { status: providerStatus } });
       }

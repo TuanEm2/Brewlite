@@ -1,6 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
-import { PayosGateway, payosDataToSign } from './payos.gateway';
+import { PayosGateway, payosDataToSign, PayosRejectedError } from './payos.gateway';
 
 describe('PayosGateway signed webhook', () => {
   const gateway = new PayosGateway();
@@ -90,6 +90,32 @@ describe('PayosGateway signed webhook', () => {
   it('rejects a missing or arbitrary signature', () => {
     expect(() => gateway.verifyWebhook({ data: { amount: 1 }, signature: 'fake' }))
       .toThrow(BadRequestException);
+  });
+
+  describe('phân biệt payOS từ chối rõ ràng với lỗi chưa rõ kết quả', () => {
+    const create = () => gateway.createPaymentLink({
+      orderCode: 260000021, amount: 35000, description: 'BL21',
+      returnUrl: 'https://shop.test/checkout/21', cancelUrl: 'https://shop.test/checkout/21',
+    });
+    const respond = (status: number, body: unknown) =>
+      jest.spyOn(global, 'fetch').mockResolvedValue({ ok: status < 400, status, json: async () => body } as Response);
+
+    it.each([200, 400, 404, 422])('HTTP %s kèm mã lỗi nghiệp vụ là từ chối rõ ràng', async (status) => {
+      respond(status, { code: '20', desc: 'invalid expiredAt' });
+      await expect(create()).rejects.toBeInstanceOf(PayosRejectedError);
+    });
+
+    it.each([401, 403, 429, 500, 502])('HTTP %s không được coi là từ chối rõ ràng', async (status) => {
+      respond(status, { code: '20' });
+      const error = await create().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      expect(error).not.toBeInstanceOf(PayosRejectedError);
+    });
+
+    it('phản hồi không phải JSON (ví dụ trang lỗi proxy) không phải từ chối rõ ràng', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 400, json: async () => { throw new Error('html'); } } as unknown as Response);
+      await expect(create()).rejects.not.toBeInstanceOf(PayosRejectedError);
+    });
   });
 
   it('never treats a signed failure as a successful payment', () => {

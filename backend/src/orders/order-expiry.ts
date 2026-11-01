@@ -23,6 +23,13 @@ export function isAwaitingPayment(status: OrderStatus): boolean {
   return status === OrderStatus.PENDING || status === OrderStatus.PAYMENT_FAILED;
 }
 
+/** Không tạo link payOS khi đơn còn ít hơn chừng này giây: payOS cần hạn ở tương lai và khách cần thời gian quét QR. */
+export const MIN_PAYMENT_LINK_SECONDS = 120;
+
+export function secondsUntilDeadline(createdAt: Date, now = new Date(), ttlMinutes = paymentTtlMinutes()): number {
+  return Math.floor((paymentDeadline(createdAt, ttlMinutes).getTime() - now.getTime()) / 1000);
+}
+
 export function isPaymentOverdue(createdAt: Date, now = new Date(), ttlMinutes = paymentTtlMinutes()): boolean {
   return now.getTime() >= paymentDeadline(createdAt, ttlMinutes).getTime();
 }

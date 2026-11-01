@@ -71,6 +71,8 @@ model Order {
   voucherCode       String?
   /// Khóa chống tạo đơn trùng (Task 10, TV1).
   idempotencyKey    String?          @unique
+  /// Thời điểm đơn bị hủy vì quá hạn thanh toán (TV3). Null với đơn khách tự hủy hoặc chưa hết hạn.
+  paymentExpiredAt  DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @default(now()) @updatedAt
   user              User?            @relation(fields: [userId], references: [id])
@@ -184,6 +186,8 @@ model PayosCheckout {
   checkoutUrl   String?
   paymentLinkId String?  @unique
   status        String   @default("CREATING")
+  /// Mã giao dịch ngân hàng đã ghi nhận (TV3), để phát hiện khách chuyển tiền lần hai vào cùng link.
+  bankReference String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)

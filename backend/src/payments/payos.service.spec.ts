@@ -1,7 +1,7 @@
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 import { PayosService } from './payos.service';
-import { PayosGateway } from './payos.gateway';
+import { PayosGateway, PayosRejectedError } from './payos.gateway';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -19,11 +19,19 @@ function fixture(overdue = true) {
     payment: { findUnique: jest.fn(async () => previous), create: jest.fn(async ({ data }: any) => { previous = data; return data; }) },
     paymentAttempt: { create: jest.fn().mockResolvedValue({}) },
     user: { update: jest.fn().mockResolvedValue({}) },
-    payosCheckout: { update: jest.fn().mockResolvedValue({}), findUnique: jest.fn().mockResolvedValue(null), create: jest.fn() },
+    payosCheckout: {
+      update: jest.fn(async ({ data }: any) => Object.assign(checkout, data)),
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+    },
   };
   const prisma = {
     order: { findUnique: jest.fn(async () => order), findFirst: jest.fn(async () => order), findFirstOrThrow: jest.fn(async () => order) },
-    payosCheckout: { findUnique: jest.fn(async () => checkout), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    payosCheckout: {
+      findUnique: jest.fn(async () => checkout),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
   const pending = { id: 'link-1', status: 'PENDING', amount: 35000, amountPaid: 0 };
@@ -175,4 +183,89 @@ describe('TV3 payOS reconciliation', () => {
     }
   });
 
+  describe('sửa lỗi sau review', () => {
+    const previousReturnUrl = process.env.PAYOS_RETURN_BASE_URL;
+    beforeEach(() => { process.env.PAYOS_RETURN_BASE_URL = 'https://example.test'; });
+    afterAll(() => {
+      if (previousReturnUrl === undefined) delete process.env.PAYOS_RETURN_BASE_URL;
+      else process.env.PAYOS_RETURN_BASE_URL = previousReturnUrl;
+    });
+    const secondsBeforeDeadline = (s: number) => new Date(Date.now() - (15 * 60 - s) * 1000);
+
+    it('lỗi 3: không tạo link mới khi đơn còn dưới 2 phút', async () => {
+      const f = fixture(false);
+      f.order.payosCheckout = null as any;
+      f.order.createdAt = secondsBeforeDeadline(60);
+      await expect(f.service.createLink(7, 1)).rejects.toThrow('sắp hết thời gian thanh toán');
+      expect(f.tx.payosCheckout.create).not.toHaveBeenCalled();
+      expect(f.gateway.createPaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('lỗi 3: link đã có vẫn mở lại được dù còn dưới 2 phút', async () => {
+      const f = fixture(false);
+      f.order.createdAt = secondsBeforeDeadline(60);
+      f.tx.payosCheckout.findUnique.mockResolvedValue({ ...f.checkout, checkoutUrl: 'https://pay.payos.vn/web/link-1' });
+      await expect(f.service.createLink(7, 1)).resolves.toMatchObject({ checkoutUrl: 'https://pay.payos.vn/web/link-1' });
+      expect(f.gateway.createPaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('lỗi 1: payOS từ chối rõ ràng thì gỡ bản ghi CREATING để đơn không bị kẹt', async () => {
+      const f = fixture(false);
+      f.order.payosCheckout = null as any;
+      f.tx.payosCheckout.create.mockResolvedValue({ ...f.checkout, status: 'CREATING', checkoutUrl: null });
+      f.gateway.createPaymentLink.mockRejectedValue(new PayosRejectedError('20'));
+      await expect(f.service.createLink(7, 1)).rejects.toBeInstanceOf(PayosRejectedError);
+      expect(f.prisma.payosCheckout.deleteMany).toHaveBeenCalledWith({
+        where: { orderId: 1, status: 'CREATING', checkoutUrl: null },
+      });
+    });
+
+    it('lỗi 1: timeout/lỗi mạng khi tạo link thì GIỮ bản ghi CREATING để đối soát', async () => {
+      const f = fixture(false);
+      f.order.payosCheckout = null as any;
+      f.tx.payosCheckout.create.mockResolvedValue({ ...f.checkout, status: 'CREATING', checkoutUrl: null });
+      f.gateway.createPaymentLink.mockRejectedValue(new ServiceUnavailableException('timeout'));
+      await expect(f.service.createLink(7, 1)).rejects.toThrow('timeout');
+      expect(f.prisma.payosCheckout.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('lỗi 2: webhook gửi lại cùng mã ngân hàng là replay, mã ngân hàng thứ hai thì báo đối soát', async () => {
+      const f = fixture(false);
+      f.tx.payosCheckout.findUnique.mockImplementation(async () => f.checkout);
+      const webhookWith = (reference: string) => {
+        f.gateway.verifyWebhook.mockReturnValue({ success: true, orderCode: 260000001, amount: 35000, paymentLinkId: 'link-1', reference });
+        return f.service.webhook({});
+      };
+      expect(await webhookWith('bank-A')).toEqual({ received: true, replayed: false });
+      expect(await webhookWith('bank-A')).toEqual({ received: true, replayed: true });
+      expect(await webhookWith('bank-B')).toEqual({ received: true, replayed: true, reconciliationRequired: true });
+      expect(f.tx.payment.create).toHaveBeenCalledTimes(1);
+      expect(f.tx.paymentAttempt.create).toHaveBeenCalledTimes(1);
+      expect(f.tx.user.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('lỗi 2: đơn đã ghi nhận trước đó chưa có mã ngân hàng (đồng bộ hoặc bản ghi cũ) gắn mã đầu tiên, mã sau khác thì báo', async () => {
+      const f = fixture(false);
+      f.order.status = OrderStatus.PAID;
+      f.tx.payosCheckout.findUnique.mockImplementation(async () => f.checkout);
+      f.tx.payment.findUnique.mockResolvedValue({ method: 'PAYOS_VIETQR', amount: 35000, idempotencyKey: 'payos:bank-old' });
+      const webhookWith = (reference: string) => {
+        f.gateway.verifyWebhook.mockReturnValue({ success: true, orderCode: 260000001, amount: 35000, paymentLinkId: 'link-1', reference });
+        return f.service.webhook({});
+      };
+      expect(await webhookWith('bank-old')).toEqual({ received: true, replayed: true });
+      expect((f.checkout as any).bankReference).toBe('bank-old');
+      expect(await webhookWith('bank-old')).toEqual({ received: true, replayed: true });
+      expect(await webhookWith('bank-new')).toEqual({ received: true, replayed: true, reconciliationRequired: true });
+      expect(f.tx.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('lỗi 5: chỉ đơn bị hủy vì quá hạn mới hiện "đã hết hạn", đơn khách tự hủy thì không', async () => {
+      const f = fixture(true);
+      f.order.status = OrderStatus.CANCELLED;
+      await expect(f.service.status(7, 1)).resolves.toMatchObject({ expired: false });
+      (f.order as any).paymentExpiredAt = new Date();
+      await expect(f.service.status(7, 1, true)).resolves.toMatchObject({ expired: true });
+    });
+  });
 });

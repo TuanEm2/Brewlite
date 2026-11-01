@@ -11,7 +11,10 @@ export class OrderExpiryWorker implements OnModuleInit, OnModuleDestroy {
   private cursor = 0;
   constructor(private readonly prisma: PrismaService, private readonly payos: PayosService) {}
   onModuleInit() {
-    if (process.env.NODE_ENV === 'test' || process.env.ORDER_EXPIRY_WORKER_ENABLED === 'false') return;
+    // Mặc định TẮT: bật lần đầu trên Render sẽ hủy hàng loạt đơn chờ cũ và hủy link payOS của chúng,
+    // nên trưởng nhóm phải chủ động đặt ORDER_EXPIRY_WORKER_ENABLED=true. Khi tắt, đơn vẫn được
+    // đồng bộ/hết hạn lúc khách mở trang thanh toán.
+    if (process.env.NODE_ENV === 'test' || process.env.ORDER_EXPIRY_WORKER_ENABLED !== 'true') return;
     this.timer = setInterval(() => void this.scan(), 30_000);
     this.timer.unref();
   }

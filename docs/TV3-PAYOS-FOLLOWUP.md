@@ -10,7 +10,7 @@ Nhánh: feature/tv03-payos-followup. Tiếp nối commit c84c712 từ bản bàn
 - Nếu payOS PAID và amountPaid khớp tổng: ghi Payment/PaymentAttempt, trạng thái và điểm trong cùng transaction, dùng chung với webhook. Idempotency theo paymentLinkId và khóa đơn chống webhook/poll/worker ghi trùng. Chấp nhận replay giao dịch đã ghi trước followup.
 - Nếu link còn PENDING và đơn quá hạn, chỉ hủy khi chưa có tiền vào; sau lệnh hủy phải GET lại. Nếu thanh toán thắng cuộc đua, ghi PAID. Chỉ CANCELLED/EXPIRED và amountPaid=0 mới hủy đơn/hoàn snapshot nguyên liệu.
 - Lỗi mạng, kết quả chưa rõ, số tiền sai hoặc chuyển thiếu: giữ đơn/kho để retry hoặc đối soát; không suy đoán thanh toán thất bại. CREATING trong 30 giây được giữ để request tạo link hoàn tất. Không tạo lại link sau timeout có thể đã tới nhà cung cấp.
-- Worker chạy mỗi 30 giây, 25 đơn/lượt, duyệt theo cursor để không kẹt ở nhóm đơn cũ; không chạy chồng trong một process. NODE_ENV=test hoặc ORDER_EXPIRY_WORKER_ENABLED=false tắt worker. Khóa database bảo vệ ghi nhận/hoàn kho giữa nhiều process.
+- Worker chạy mỗi 30 giây, 25 đơn/lượt, duyệt theo cursor để không kẹt ở nhóm đơn cũ; không chạy chồng trong một process. Worker **mặc định tắt**, chỉ chạy khi đặt ORDER_EXPIRY_WORKER_ENABLED=true (và không chạy khi NODE_ENV=test), để lần deploy đầu không tự hủy hàng loạt đơn chờ cũ trên Render; khi tắt, đơn vẫn được đồng bộ/hết hạn lúc khách mở trang thanh toán. Khóa database bảo vệ ghi nhận/hoàn kho giữa nhiều process.
 - Checkout thật hiển thị tên nước, đếm ngược, khóa nút khi hết thời gian, chờ backend đối soát thay vì tự kết luận hủy. Thông báo lỗi đồng bộ khi polling thất bại.
 
 ## Kiểm thử
@@ -24,6 +24,9 @@ Chạy: npm run typecheck; npm test; npm run build; npm run test:e2e.
 
 - Không đổi quyền hủy đơn đã trả của mock (phần TV5); đơn có payOS checkout vẫn bị chặn ở đường hủy của khách.
 - CREATING mà payOS không tìm thấy sau timeout: giữ lại để đối soát, không tự giải phóng kho do chưa có kết luận đủ chắc chắn. Worker ghi orderId cần kiểm tra. Khi vận hành nhiều đơn/máy, nên bổ sung hàng đợi và lịch retry lưu DB; cooldown hiện tại ở RAM mỗi instance.
+- Nếu chính lệnh tạo link nhận câu trả lời từ chối rõ ràng của payOS (JSON mã khác "00", HTTP 200/400/404/422) thì chắc chắn chưa có link: bản ghi CREATING được gỡ để khách thử lại và đơn hết hạn bình thường. Link mới chỉ được tạo khi đơn còn ít nhất 2 phút trước hạn; link đã có thì vẫn mở lại được.
+- Mã giao dịch ngân hàng đã ghi nhận được lưu ở `PayosCheckout.bankReference`. Webhook gửi lại cùng mã là replay; đơn ghi nhận bằng đồng bộ hoặc bản ghi cũ chưa có mã thì gắn mã đầu tiên tới sau; mã ngân hàng khác cho đơn đã thanh toán được ghi log lỗi và trả `reconciliationRequired: true` (HTTP 200) để đối soát/hoàn tiền thủ công. Không ghi thêm Payment, PaymentAttempt hay điểm.
+- Đơn bị hủy vì quá hạn có `Order.paymentExpiredAt`; trang thanh toán chỉ hiện "đã hết hạn" cho các đơn này, không nhầm với đơn khách tự hủy.
 - Chưa xác minh live bằng khóa payOS thật, chưa chuyển tiền thật hoặc thay đổi môi trường production.
 - Áp dụng migration productName bằng quy trình deploy của TV1; không reset DB. Test e2e chỉ trên DB thử nghiệm.
 - Tài liệu provider: https://payos.vn/docs/api/ (expiredAt, 5 trường ký, GET và cancel link).

@@ -17,6 +17,19 @@ export interface VerifiedPayosWebhook {
   success: boolean;
 }
 
+/**
+ * HTTP status mà payOS dùng khi đã xử lý yêu cầu và trả lời từ chối bằng mã lỗi nghiệp vụ.
+ * Không gồm 401/403/429/5xx: các lỗi đó không chứng minh yêu cầu chưa được thực hiện.
+ */
+const PROVIDER_ANSWER_STATUSES = [200, 400, 404, 422];
+
+/** payOS đã trả lời rõ ràng là từ chối (mã khác "00"); yêu cầu chắc chắn không được thực hiện. */
+export class PayosRejectedError extends ServiceUnavailableException {
+  constructor(readonly providerCode: string) {
+    super('payOS từ chối yêu cầu (mã ' + providerCode + ').');
+  }
+}
+
 function isRecord(input: unknown): input is JsonObject {
   return input !== null && typeof input === 'object' && !Array.isArray(input);
 }
@@ -78,6 +91,10 @@ export class PayosGateway {
       throw new ServiceUnavailableException('Không thể kết nối payOS; trạng thái thanh toán chưa xác định.');
     }
     const payload: unknown = await response.json().catch(() => null);
+    if (isRecord(payload) && typeof payload.code === 'string' && payload.code !== '00' &&
+        PROVIDER_ANSWER_STATUSES.includes(response.status)) {
+      throw new PayosRejectedError(payload.code);
+    }
     if (!response.ok || !isRecord(payload) || payload.code !== '00' || !isRecord(payload.data)) {
       throw new ServiceUnavailableException('payOS chưa trả kết quả hợp lệ; kiểm tra lại trạng thái trước khi thử lại.');
     }
