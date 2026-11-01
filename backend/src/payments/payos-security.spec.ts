@@ -6,6 +6,8 @@ import { createHmac } from 'node:crypto';
 import * as request from 'supertest';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { OrdersService } from '../orders/orders.service';
+import { ProductsService } from '../products/products.service';
 import { applyVoucher } from '../orders/voucher';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -26,14 +28,14 @@ describe('TV5 payOS security (HTTP, mocked persistence)', () => {
   let app: INestApplication;
   let jwt: JwtService;
   let token: string;
-  let order: { id: number; userId: number; total: number; status: OrderStatus };
+  let order: { id: number; userId: number; total: number; status: OrderStatus; createdAt: Date; items: unknown[] };
   let checkout: Record<string, unknown> | null;
   let payment: Record<string, unknown> | null;
   let points: number;
   const mockPayment = jest.fn();
   const prisma = {
     $transaction: jest.fn(), $queryRaw: jest.fn(),
-    order: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
+    order: { findUnique: jest.fn(), findFirstOrThrow: jest.fn(), findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
     payosCheckout: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     payment: { findUnique: jest.fn(), create: jest.fn() },
     paymentAttempt: { create: jest.fn() }, user: { update: jest.fn() },
@@ -63,7 +65,7 @@ describe('TV5 payOS security (HTTP, mocked persistence)', () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
     expect(prisma.order.update).not.toHaveBeenCalled();
   }
-  beforeAll(async () => {
+  beforeEach(async () => {
     Object.assign(process.env, env);
     fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('External network forbidden in TV5 tests'));
     createLink = jest.spyOn(gateway, 'createPaymentLink');
@@ -72,7 +74,7 @@ describe('TV5 payOS security (HTTP, mocked persistence)', () => {
       imports: [JwtModule.register({ secret, signOptions: { algorithm: 'HS256', expiresIn: '1h' },
         verifyOptions: { algorithms: ['HS256'] } })],
       controllers: [PaymentsController],
-      providers: [PayosService, JwtAuthGuard,
+      providers: [PayosService, OrdersService, ProductsService, JwtAuthGuard,
         { provide: PrismaService, useValue: prisma },
         { provide: PayosGateway, useValue: gateway },
         { provide: PaymentsService, useValue: { mockPayment } }],
@@ -85,15 +87,20 @@ describe('TV5 payOS security (HTTP, mocked persistence)', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
-    order = { id: 42, userId: 7, total: applyVoucher(70000, 'BREW10').total, status: OrderStatus.PENDING };
+    order = { id: 42, userId: 7, total: applyVoucher(70000, 'BREW10').total, status: OrderStatus.PENDING, createdAt: new Date(), items: [] };
     checkout = { orderId: 42, orderCode: 260000042, amount: 63000,
-      paymentLinkId: 'test-link', checkoutUrl: 'https://pay.payos.vn/web/test-link', status: 'PENDING' };
+      paymentLinkId: 'test-link', checkoutUrl: 'https://pay.payos.vn/web/test-link', status: 'PENDING', createdAt: new Date() };
     payment = null; points = 0;
     prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => fn(prisma));
     prisma.$queryRaw.mockImplementation(async (_sql: unknown, id: number, userId?: number) =>
       id === order.id && (userId === undefined || userId === order.userId) ? [{ id }] : []);
     prisma.order.findFirst.mockImplementation(async ({ where }) =>
       where.id === order.id && where.userId === order.userId ? { ...order, payosCheckout: checkout } : null);
+    prisma.order.findFirstOrThrow.mockImplementation(async ({ where }) => {
+      if (where.id !== order.id || where.userId !== order.userId) throw new Error('Fixture ownership mismatch');
+      return { ...order, payosCheckout: checkout };
+    });
+    prisma.order.findUnique.mockImplementation(async () => ({ ...order, payosCheckout: checkout }));
     prisma.order.findUniqueOrThrow.mockImplementation(async () => ({ ...order }));
     prisma.order.update.mockImplementation(async ({ data }) => Object.assign(order, data));
     prisma.payosCheckout.findUnique.mockImplementation(async ({ where }) =>
@@ -113,9 +120,12 @@ describe('TV5 payOS security (HTTP, mocked persistence)', () => {
     });
     createLink.mockResolvedValue({ orderCode: 260000042, amount: 63000,
       paymentLinkId: 'test-link', checkoutUrl: 'https://pay.payos.vn/web/test-link' });
-    getLink.mockRejectedValue(new Error('Unexpected provider recovery call'));
+    getLink.mockResolvedValue({ id: 'test-link', amount: 63000, amountPaid: 0, status: 'PENDING' });
   });
-  afterEach(() => { expect(fetchSpy).not.toHaveBeenCalled(); });
+  afterEach(async () => {
+    try { expect(fetchSpy).not.toHaveBeenCalled(); }
+    finally { await app?.close(); jest.restoreAllMocks(); }
+  });
   afterAll(async () => {
     await app?.close(); jest.restoreAllMocks();
     for (const [key, value] of Object.entries(oldEnv)) {
@@ -206,7 +216,12 @@ describe('TV5 payOS security (HTTP, mocked persistence)', () => {
   it('does not award points again for a different bank reference on a paid order', async () => {
     await request(app.getHttpServer()).post('/payments/payos/webhook').send(payload()).expect(200);
     await request(app.getHttpServer()).post('/payments/payos/webhook')
-      .send(payload({ reference: 'second-bank-reference' })).expect(409);
+      .send(payload({ reference: 'second-bank-reference' }))
+      .expect('syncOrder' in app.get(PayosService) ? 200 : 409);
+    // TV1 rejects a new bank reference; TV3 deduplicates by payment link.
+    // Both versions must preserve exactly one settlement and one points award.
+    expect(prisma.paymentAttempt.create).toHaveBeenCalledTimes(1);
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
     expect(points).toBe(6); expect(prisma.payment.create).toHaveBeenCalledTimes(1);
   });
 });

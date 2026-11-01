@@ -10,6 +10,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { PaymentsController } from '../src/payments/payments.controller';
 import { PaymentsService } from '../src/payments/payments.service';
 import { PayosService } from '../src/payments/payos.service';
+import { OrdersService } from '../src/orders/orders.service';
+import { ProductsService } from '../src/products/products.service';
 import { PayosGateway } from '../src/payments/payos.gateway';
 
 // Fail closed before connecting. Never execute on an application/Render database.
@@ -72,7 +74,7 @@ describe('TV5 payOS security — PostgreSQL + HTTP', () => {
       imports: [JwtModule.register({ secret: 'tv5-test-jwt-secret-at-least-32-bytes',
         signOptions: { expiresIn: '1h', algorithm: 'HS256' }, verifyOptions: { algorithms: ['HS256'] } })],
       controllers: [PaymentsController],
-      providers: [PayosService, PaymentsService, PayosGateway, JwtAuthGuard,
+      providers: [PayosService, PaymentsService, PayosGateway, OrdersService, ProductsService, JwtAuthGuard,
         { provide: PrismaService, useValue: prisma }],
     }).compile();
     app = module.createNestApplication();
@@ -164,7 +166,10 @@ describe('TV5 payOS security — PostgreSQL + HTTP', () => {
     await request(app.getHttpServer()).post('/api/payments/payos/webhook').send(event()).expect(200);
     expect(await snapshot()).toEqual(after);
     await request(app.getHttpServer()).post('/payments/payos/webhook')
-      .send(event({ reference: `${reference}-second` })).expect(409);
+      .send(event({ reference: `${reference}-second` }))
+      .expect('syncOrder' in app.get(PayosService) ? 200 : 409);
+    // TV1 rejects a different reference; TV3 treats the same link as a replay.
+    // Neither may create another payment or award points again.
     expect(await snapshot()).toEqual(after);
   });
 });
