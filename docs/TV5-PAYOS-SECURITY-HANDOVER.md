@@ -49,3 +49,19 @@ npm.cmd run build -w @brewlite/backend
 Bộ test này không cần `.env`, PostgreSQL hay khóa payOS thật; các biến thử được thiết lập và khôi phục trong test.
 
 Chỉ stage file test và tài liệu này. PR theo nhánh tích hợp nhóm trưởng đã chốt; chưa push thẳng main hay nhánh Render.
+
+## Cập nhật kiểm chứng trên Windows — 01/11/2026
+
+- Bộ test HTTP với Prisma mô phỏng: 26/26 đạt.
+- Toàn bộ test backend: 195/195 đạt.
+- Bộ PostgreSQL + HTTP: 11/11 đạt trên brewlite_tv5_payos_test.
+- File mới: backend/test/payos-security.e2e-spec.ts.
+- JWT thiếu/sai/hết hạn và truy cập đơn người khác bị từ chối.
+- Webhook giả, sửa số tiền hoặc sai mã link bị từ chối; dữ liệu không đổi.
+- Bốn webhook hợp lệ đồng thời chỉ tạo một Payment, một PaymentAttempt
+  và cộng điểm một lần; gửi lại qua alias không thay đổi kết quả.
+- Không gọi payOS thật, không sử dụng khóa merchant hoặc chuyển tiền thật.
+
+Kết quả PostgreSQL này bổ sung cho giới hạn của bộ test mô phỏng ở trên.
+Đơn có voucher được tạo trực tiếp làm dữ liệu thử; chưa kiểm chứng toàn bộ
+luồng POST /orders, công thức nguyên liệu hoặc bản tích hợp cuối của nhóm.
