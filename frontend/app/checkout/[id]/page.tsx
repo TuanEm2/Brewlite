@@ -26,6 +26,7 @@ import {
 type OrderItem = {
   id: number;
   productId: number;
+  productName: string;
   size: string;
   toppings: Array<{ name: string; price: number }>;
   quantity: number;
@@ -62,7 +63,6 @@ function MockCheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
-  const cartItems = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
 
   const [mounted, setMounted] = useState(false);
@@ -190,9 +190,6 @@ function MockCheckoutPage() {
     }
   }
 
-  const productName = (productId: number) =>
-    cartItems.find((item) => item.productId === productId)?.name ?? `Đồ uống #${productId}`;
-
   // ---------- Màn hình xác nhận (wireframe 5) ----------
   if (order?.status === "PAID") {
     return (
@@ -205,6 +202,16 @@ function MockCheckoutPage() {
             ✓
           </p>
           <h1 className="mt-4 text-2xl font-extrabold text-gray-900">Đặt hàng thành công</h1>
+          <ul className="mt-5 divide-y divide-amber-100 text-left text-sm">
+            {order.items?.map((item) => (
+              <li key={item.id} className="flex justify-between gap-3 py-2">
+                <span>{item.productName} {item.size} ×{item.quantity}
+                  {item.toppings.length > 0 && <span className="block text-xs text-gray-500">{item.toppings.map((t) => t.name).join(", ")}</span>}
+                </span>
+                <strong>{formatVnd(item.lineTotal)}</strong>
+              </li>
+            ))}
+          </ul>
           <dl className="mt-5 space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-gray-600">Mã đơn</dt>
@@ -293,7 +300,7 @@ function MockCheckoutPage() {
                 {order.items.map((item) => (
                   <li key={item.id} className="flex justify-between gap-3 py-2">
                     <span>
-                      {productName(item.productId)} {item.size} ×{item.quantity}
+                      {item.productName} {item.size} ×{item.quantity}
                       {item.toppings.length > 0 && (
                         <span className="block text-xs text-gray-500">{item.toppings.map((t) => t.name).join(", ")}</span>
                       )}

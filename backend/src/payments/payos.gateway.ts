@@ -17,6 +17,19 @@ export interface VerifiedPayosWebhook {
   success: boolean;
 }
 
+/**
+ * HTTP status mà payOS dùng khi đã xử lý yêu cầu và trả lời từ chối bằng mã lỗi nghiệp vụ.
+ * Không gồm 401/403/429/5xx: các lỗi đó không chứng minh yêu cầu chưa được thực hiện.
+ */
+const PROVIDER_ANSWER_STATUSES = [200, 400, 404, 422];
+
+/** payOS đã trả lời rõ ràng là từ chối (mã khác "00"); yêu cầu chắc chắn không được thực hiện. */
+export class PayosRejectedError extends ServiceUnavailableException {
+  constructor(readonly providerCode: string) {
+    super('payOS từ chối yêu cầu (mã ' + providerCode + ').');
+  }
+}
+
 function isRecord(input: unknown): input is JsonObject {
   return input !== null && typeof input === 'object' && !Array.isArray(input);
 }
@@ -51,6 +64,11 @@ export class PayosGateway {
     return { clientId, apiKey, checksumKey };
   }
 
+  /** Local validation only; safe to run before reserving a checkout in the database. */
+  assertConfigured(): void {
+    this.config();
+  }
+
   private hash(value: string, key: string): string {
     return createHmac('sha256', key).update(value).digest('hex');
   }
@@ -73,6 +91,10 @@ export class PayosGateway {
       throw new ServiceUnavailableException('Không thể kết nối payOS; trạng thái thanh toán chưa xác định.');
     }
     const payload: unknown = await response.json().catch(() => null);
+    if (isRecord(payload) && typeof payload.code === 'string' && payload.code !== '00' &&
+        PROVIDER_ANSWER_STATUSES.includes(response.status)) {
+      throw new PayosRejectedError(payload.code);
+    }
     if (!response.ok || !isRecord(payload) || payload.code !== '00' || !isRecord(payload.data)) {
       throw new ServiceUnavailableException('payOS chưa trả kết quả hợp lệ; kiểm tra lại trạng thái trước khi thử lại.');
     }
@@ -80,10 +102,11 @@ export class PayosGateway {
   }
 
   async createPaymentLink(data: {
-    orderCode: number; amount: number; description: string; returnUrl: string; cancelUrl: string;
+    orderCode: number; amount: number; description: string; returnUrl: string; cancelUrl: string; expiredAt?: number;
   }): Promise<PayosLink> {
     const { checksumKey } = this.config();
-    const signature = this.hash(payosDataToSign(data), checksumKey);
+    const { amount, cancelUrl, description, orderCode, returnUrl } = data;
+    const signature = this.hash(payosDataToSign({ amount, cancelUrl, description, orderCode, returnUrl }), checksumKey);
     const body = await this.call('/v2/payment-requests', {
       method: 'POST', body: { ...data, signature },
     });
@@ -100,13 +123,20 @@ export class PayosGateway {
   }
 
   /** Recover provider checkout after a timeout; never request a second payment for the same order. */
-  async getPaymentLink(orderCode: number): Promise<{ id: string; status: string; amount: number }> {
+  async getPaymentLink(orderCode: number): Promise<{ id: string; status: string; amount: number; amountPaid: number }> {
     const body = await this.call('/v2/payment-requests/' + encodeURIComponent(String(orderCode)));
     if (body.orderCode !== orderCode || typeof body.id !== 'string' ||
-        typeof body.status !== 'string' || typeof body.amount !== 'number') {
+        typeof body.status !== 'string' || !Number.isSafeInteger(body.amount) ||
+        !Number.isSafeInteger(body.amountPaid) || Number(body.amountPaid) < 0) {
       throw new ServiceUnavailableException('Không đối chiếu được giao dịch payOS.');
     }
-    return { id: body.id, status: body.status, amount: body.amount };
+    return { id: body.id, status: body.status, amount: body.amount as number, amountPaid: body.amountPaid as number };
+  }
+
+  async cancelPaymentLink(orderCode: number): Promise<void> {
+    await this.call('/v2/payment-requests/' + encodeURIComponent(String(orderCode)) + '/cancel', {
+      method: 'POST', body: { cancellationReason: 'BrewLite: het han thanh toan' },
+    });
   }
 
   verifyWebhook(input: unknown): VerifiedPayosWebhook {

@@ -3,13 +3,33 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { OrdersService } from '../orders/orders.service';
+import {
+  isAwaitingPayment, isPaymentOverdue, MIN_PAYMENT_LINK_SECONDS, paymentDeadline, secondsUntilDeadline,
+} from '../orders/order-expiry';
+import { paymentTransitionPath } from '../orders/order-state';
 import { PrismaService } from '../prisma/prisma.service';
-import { PayosGateway, VerifiedPayosWebhook } from './payos.gateway';
+import { PayosGateway, PayosRejectedError, VerifiedPayosWebhook } from './payos.gateway';
+
+const SYNC_COOLDOWN_MS = 10_000;
+const MAX_SYNC_RESULTS = 1000;
+type SyncResult = { checkedAt: number } & (
+  { ok: true } | { ok: false; error: unknown }
+);
+
+function canPay(status: OrderStatus): boolean {
+  try {
+    paymentTransitionPath(status, OrderStatus.PAID);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 @Injectable()
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
-  constructor(private readonly prisma: PrismaService, private readonly gateway: PayosGateway) {}
+  constructor(private readonly prisma: PrismaService, private readonly gateway: PayosGateway, private readonly orders: OrdersService) {}
 
   private returnBaseUrl(): string {
     const url = process.env.PAYOS_RETURN_BASE_URL;
@@ -34,25 +54,33 @@ export class PayosService {
       throw new ServiceUnavailableException('Chưa bật thanh toán thật.');
     }
     const baseUrl = this.returnBaseUrl();
+    await this.status(userId, orderId, true);
 
-    const { checkout, isNew } = await this.prisma.$transaction(async (tx) => {
+    const { checkout, isNew, expiresAt } = await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: number }>>`
         SELECT "id" FROM "Order" WHERE "id" = ${orderId} AND "userId" = ${userId} FOR UPDATE
       `;
       if (!locked.length) throw new NotFoundException('Không tìm thấy đơn của bạn.');
       const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
-      if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED) {
+      if (!canPay(order.status) || isPaymentOverdue(order.createdAt)) {
         throw new ConflictException('Đơn không ở trạng thái chờ thanh toán.');
       }
       const saved = await tx.payosCheckout.findUnique({ where: { orderId } });
       if (saved) {
         if (saved.amount !== order.total) throw new ConflictException('Số tiền đơn đã thay đổi.');
-        return { checkout: saved, isNew: false };
+        return { checkout: saved, isNew: false, expiresAt: paymentDeadline(order.createdAt) };
       }
+      // Link mới mà sắp hết hạn sẽ bị payOS từ chối hoặc hết hạn khi khách đang quét QR.
+      if (secondsUntilDeadline(order.createdAt) < MIN_PAYMENT_LINK_SECONDS) {
+        throw new ConflictException('Đơn sắp hết thời gian thanh toán, không thể mở thanh toán mới. Vui lòng đặt lại đơn.');
+      }
+      // Reject local configuration errors before persisting CREATING.
+      // Once a provider request is sent, its outcome may still need reconciliation.
+      this.gateway.assertConfigured();
       const created = await tx.payosCheckout.create({
         data: { orderId, orderCode: this.orderCode(orderId), amount: order.total },
       });
-      return { checkout: created, isNew: true };
+      return { checkout: created, isNew: true, expiresAt: paymentDeadline(order.createdAt) };
     });
 
     if (checkout.checkoutUrl) {
@@ -77,13 +105,25 @@ export class PayosService {
       return { orderId, orderCode: checkout.orderCode, amount: checkout.amount, checkoutUrl, status: 'PENDING' };
     }
 
-    const link = await this.gateway.createPaymentLink({
-      orderCode: checkout.orderCode,
-      amount: checkout.amount,
-      description: 'BL' + String(orderId),
-      returnUrl: baseUrl + '/checkout/' + String(orderId),
-      cancelUrl: baseUrl + '/checkout/' + String(orderId),
-    });
+    let link: Awaited<ReturnType<PayosGateway['createPaymentLink']>>;
+    try {
+      link = await this.gateway.createPaymentLink({
+        orderCode: checkout.orderCode,
+        amount: checkout.amount,
+        description: 'BL' + String(orderId),
+        expiredAt: Math.floor(expiresAt.getTime() / 1000),
+        returnUrl: baseUrl + '/checkout/' + String(orderId),
+        cancelUrl: baseUrl + '/checkout/' + String(orderId),
+      });
+    } catch (error: unknown) {
+      // payOS đã trả lời từ chối: chắc chắn chưa có link, nên gỡ bản ghi CREATING để đơn không bị kẹt
+      // (giữ kho mãi, không thử lại, không hết hạn được). Lỗi mạng/timeout thì giữ nguyên để đối soát.
+      if (error instanceof PayosRejectedError) {
+        await this.prisma.payosCheckout.deleteMany({ where: { orderId, status: 'CREATING', checkoutUrl: null } });
+        this.logger.warn('payOS rejected link creation for order #' + orderId + ' (code ' + error.providerCode + ').');
+      }
+      throw error;
+    }
     await this.prisma.payosCheckout.updateMany({
       where: { orderId, status: 'CREATING' },
       data: { checkoutUrl: link.checkoutUrl, paymentLinkId: link.paymentLinkId, status: 'PENDING' },
@@ -94,17 +134,98 @@ export class PayosService {
     };
   }
 
-  async status(userId: number, orderId: number) {
-    const order = await this.prisma.order.findFirst({
+  async status(userId: number, orderId: number, force = false) {
+    let order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
-      select: { id: true, status: true, total: true, payosCheckout: true },
+      include: { payosCheckout: true, items: true },
     });
     if (!order) throw new NotFoundException('Không tìm thấy đơn của bạn.');
+    await this.syncOrder(orderId, force);
+    order = await this.prisma.order.findFirstOrThrow({
+      where: { id: orderId, userId }, include: { payosCheckout: true, items: true },
+    });
     return {
       orderId: order.id, status: order.status, amount: order.total,
       checkoutUrl: order.payosCheckout?.checkoutUrl ?? null,
       providerStatus: order.payosCheckout?.status ?? null,
+      expiresAt: paymentDeadline(order.createdAt).toISOString(),
+      // Chỉ đơn bị hủy vì quá hạn (expireUnpaidOrder ghi paymentExpiredAt); đơn khách tự hủy không tính.
+      expired: order.status === OrderStatus.CANCELLED && Boolean(order.paymentExpiredAt),
+      items: order.items.map((item) => ({ productName: item.productName, size: item.size, quantity: item.qty, lineTotal: item.lineTotal })),
     };
+  }
+
+  private readonly syncing = new Map<number, Promise<void>>();
+  private readonly syncResults = new Map<number, SyncResult>();
+
+  async syncOrder(orderId: number, force = false): Promise<void> {
+    const running = this.syncing.get(orderId);
+    if (running) return running;
+    const previous = this.syncResults.get(orderId);
+    if (!force && previous && Date.now() - previous.checkedAt < SYNC_COOLDOWN_MS) {
+      if (!previous.ok) {
+        // A webhook may have completed payment since the failed provider request.
+        const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
+        if (order && isAwaitingPayment(order.status)) throw previous.error;
+        this.syncResults.delete(orderId);
+      }
+      return;
+    }
+    const task = this.reconcile(orderId);
+    this.syncing.set(orderId, task);
+    try {
+      await task;
+      this.rememberSyncResult(orderId, { checkedAt: Date.now(), ok: true });
+    } catch (error: unknown) {
+      this.rememberSyncResult(orderId, { checkedAt: Date.now(), ok: false, error });
+      throw error;
+    } finally {
+      this.syncing.delete(orderId);
+    }
+  }
+
+  private rememberSyncResult(orderId: number, result: SyncResult): void {
+    this.syncResults.delete(orderId);
+    this.syncResults.set(orderId, result);
+    if (this.syncResults.size > MAX_SYNC_RESULTS) {
+      this.syncResults.delete(this.syncResults.keys().next().value!);
+    }
+  }
+
+  private async reconcile(orderId: number): Promise<void> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { payosCheckout: true } });
+    if (!order || !isAwaitingPayment(order.status)) return;
+    const checkout = order.payosCheckout;
+    if (!checkout) {
+      if (isPaymentOverdue(order.createdAt)) await this.orders.expireUnpaidOrder(orderId);
+      return;
+    }
+    if (process.env.PAYMENT_MODE !== 'payos') return;
+    // A create request may still be in flight. A timeout is never proof of non-payment.
+    if (checkout.status === 'CREATING' && Date.now() - checkout.createdAt.getTime() < 30_000) return;
+    let link = await this.gateway.getPaymentLink(checkout.orderCode);
+    const validate = () => {
+      if (link.amount !== checkout.amount || link.amount !== order.total ||
+          (checkout.paymentLinkId && checkout.paymentLinkId !== link.id)) {
+        throw new ConflictException('Giao dịch payOS không khớp; cần đối soát.');
+      }
+    };
+    validate();
+    if (link.status === 'PENDING' && isPaymentOverdue(order.createdAt) && link.amountPaid === 0) {
+      await this.gateway.cancelPaymentLink(checkout.orderCode);
+      link = await this.gateway.getPaymentLink(checkout.orderCode);
+      validate();
+    }
+    if (link.status === 'PAID' && link.amountPaid === order.total) {
+      await this.recordPayment(checkout, {
+        orderCode: checkout.orderCode, amount: link.amount, paymentLinkId: link.id,
+        reference: 'sync:' + link.id, success: true,
+      });
+    } else if ((link.status === 'CANCELLED' || link.status === 'EXPIRED') && link.amountPaid === 0) {
+      await this.orders.expireUnpaidOrder(orderId, link.status);
+    } else if (link.amountPaid > 0) {
+      throw new ConflictException('Đã có tiền vào nhưng chưa khớp tổng đơn; cần đối soát.');
+    }
   }
 
   /** No redirect query parameter is trusted as proof of payment. */
@@ -124,20 +245,48 @@ export class PayosService {
       throw new BadRequestException('Số tiền hoặc mã link thanh toán không khớp.');
     }
 
+    return this.recordPayment(mapped, event);
+  }
+
+  /**
+   * Phân biệt webhook gửi lại với một giao dịch ngân hàng MỚI cho đơn đã thanh toán, dựa trên
+   * mã giao dịch ngân hàng lưu ở PayosCheckout.bankReference. Đơn ghi nhận bằng đồng bộ (`sync:`)
+   * hoặc bản ghi cũ chưa có mã: mã ngân hàng đầu tiên tới sau đó được gắn vào.
+   */
+  private async isSecondBankTransfer(
+    tx: Prisma.TransactionClient, orderId: number, reference: string,
+  ): Promise<boolean> {
+    if (reference.startsWith('sync:')) return false;
+    const checkout = await tx.payosCheckout.findUnique({ where: { orderId } });
+    if (!checkout) return false;
+    if (!checkout.bankReference) {
+      await tx.payosCheckout.update({ where: { orderId }, data: { bankReference: reference } });
+      return false;
+    }
+    return checkout.bankReference !== reference;
+  }
+
+  private async recordPayment(mapped: { orderId: number; amount: number }, event: VerifiedPayosWebhook) {
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: number }>>`
         SELECT "id" FROM "Order" WHERE "id" = ${mapped.orderId} FOR UPDATE
       `;
       if (!locked.length) throw new NotFoundException('Đơn đã bị xóa; cần đối soát giao dịch.');
       const order = await tx.order.findUniqueOrThrow({ where: { id: mapped.orderId } });
-      const uniqueKey = 'payos:' + event.reference;
+      const uniqueKey = 'payos:link:' + event.paymentLinkId;
       const previous = await tx.payment.findUnique({ where: { orderId: order.id } });
 
-      if (order.status === OrderStatus.PAID && previous?.idempotencyKey === uniqueKey) {
+      if (previous?.method === 'PAYOS_VIETQR' && previous.amount === event.amount &&
+          (previous.idempotencyKey === uniqueKey || !isAwaitingPayment(order.status))) {
+        if (await this.isSecondBankTransfer(tx, order.id, event.reference)) {
+          // Khách có thể đã chuyển tiền hai lần vào cùng một link: không ghi trùng, nhưng phải báo đối soát.
+          this.logger.error('Second bank transfer for paid order #' + order.id + ': manual reconciliation/refund required.');
+          return { received: true, replayed: true, reconciliationRequired: true };
+        }
         return { received: true, replayed: true };
       }
-      if (previous || order.status === OrderStatus.PAID ||
-          (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED)) {
+      // Task 10 (TV3): ghi PAID qua máy trạng thái; PAYMENT_FAILED đi "thử lại" về PENDING rồi mới PAID.
+      if (previous || !canPay(order.status)) {
         this.logger.error('Real payment for an order in a conflicting state: manual reconciliation.');
         throw new ConflictException('Đơn không thể tự ghi nhận thanh toán; cần đối soát.');
       }
@@ -162,7 +311,11 @@ export class PayosService {
       });
       await tx.payosCheckout.update({
         where: { orderId: order.id },
-        data: { status: 'PAID', paymentLinkId: event.paymentLinkId },
+        data: {
+          status: 'PAID', paymentLinkId: event.paymentLinkId,
+          // Mã giao dịch ngân hàng để phát hiện lần chuyển tiền thứ hai; đồng bộ (`sync:`) chưa có mã thật.
+          ...(event.reference.startsWith('sync:') ? {} : { bankReference: event.reference }),
+        },
       });
       return { received: true, replayed: false };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });

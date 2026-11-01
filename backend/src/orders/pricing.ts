@@ -12,6 +12,7 @@ export interface PricingProduct {
 
 export interface PricedLine {
   productId: number;
+  productName: string;
   size: string;
   toppings: PricedOption[];
   quantity: number;
@@ -52,6 +53,7 @@ export function priceLine(
     product.price + size.price + toppings.reduce((sum, t) => sum + t.price, 0);
   return {
     productId: product.id,
+    productName: product.name,
     size: size.name,
     toppings,
     quantity,

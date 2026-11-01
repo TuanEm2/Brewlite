@@ -10,6 +10,7 @@ import { PENDING_CHECKOUT_KEY, isPayable, readSession, removeSession, statusLabe
 interface OrderItem {
   id: number;
   productId: number;
+  productName: string;
   size: string;
   toppings: Array<{ name: string; price: number }>;
   quantity: number;
@@ -222,7 +223,7 @@ export default function OrderHistoryPage() {
                       <li key={item.id} className="flex justify-between py-2.5">
                         <div>
                           <p className="font-semibold text-gray-900">
-                            Đồ uống #{item.productId} · Size {item.size} ×{item.quantity}
+                            {item.productName} · Size {item.size} ×{item.quantity}
                           </p>
                           {item.toppings && item.toppings.length > 0 && (
                             <p className="text-xs text-gray-500">
