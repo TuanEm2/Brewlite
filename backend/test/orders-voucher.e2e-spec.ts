@@ -12,6 +12,7 @@ describe('Orders voucher (HTTP + PostgreSQL)', () => {
   let prisma: PrismaService;
   let userId: number | undefined;
   let productId: number | undefined;
+  let ingredientId: number | undefined;
   let token: string;
 
   beforeAll(async () => {
@@ -39,27 +40,55 @@ describe('Orders voucher (HTTP + PostgreSQL)', () => {
 
     token = await app.get(JwtService).signAsync({ sub: user.id });
 
+    // 1. Tạo nguyên liệu mẫu với tồn kho ban đầu = 10
+    const ingredient = await prisma.ingredient.create({
+      data: {
+        code: `ING_VOUCHER_${randomUUID().substring(0, 6)}`,
+        name: `Voucher Test Ingredient ${randomUUID()}`,
+        unit: 'G',
+        stock: 10,
+        version: 0,
+      },
+    });
+    ingredientId = ingredient.id;
+
+    // 2. Tạo sản phẩm mẫu
     const product = await prisma.product.create({
       data: {
         name: `Voucher test ${randomUUID()}`,
         price: 70000,
         imageUrl: '/test.png',
-        stock: 10,
         sizes: [{ name: 'S', price: 0 }],
         toppings: [],
       },
     });
     productId = product.id;
+
+    // 3. Liên kết sản phẩm với nguyên liệu qua ProductIngredient (1 ly tiêu tốn 1 đơn vị nguyên liệu)
+    await prisma.productIngredient.create({
+      data: {
+        productId: product.id,
+        ingredientId: ingredient.id,
+        quantity: 1,
+        size: 'S',
+        topping: '',
+      },
+    });
   });
 
   afterAll(async () => {
     try {
       if (prisma && userId !== undefined) {
+        await prisma.orderItem.deleteMany({ where: { order: { userId } } });
         await prisma.order.deleteMany({ where: { userId } });
         await prisma.user.delete({ where: { id: userId } });
       }
       if (prisma && productId !== undefined) {
+        await prisma.productIngredient.deleteMany({ where: { productId } });
         await prisma.product.delete({ where: { id: productId } });
+      }
+      if (prisma && ingredientId !== undefined) {
+        await prisma.ingredient.delete({ where: { id: ingredientId } });
       }
     } finally {
       await app?.close();
@@ -88,8 +117,8 @@ describe('Orders voucher (HTTP + PostgreSQL)', () => {
 
   it('lưu đúng mã, tiền giảm và tổng tiền; thử lại không trừ kho lần hai', async () => {
     const key = randomUUID();
-    const before = await prisma.product.findUniqueOrThrow({
-      where: { id: productId! },
+    const before = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientId! },
     });
 
     const first = await post(payload(key, ' brew10 ')).expect(201);
@@ -114,10 +143,10 @@ describe('Orders voucher (HTTP + PostgreSQL)', () => {
     const replay = await post(payload(key, 'BREW10')).expect(201);
     expect(replay.body.id).toBe(first.body.id);
 
-    const after = await prisma.product.findUniqueOrThrow({
-      where: { id: productId! },
+    const after = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientId! },
     });
-    expect(after.stock).toBe(before.stock - 1);
+    expect(Number(after.stock)).toBe(Number(before.stock) - 1);
     expect(after.version).toBe(before.version + 1);
     expect(await prisma.order.count({
       where: { idempotencyKey: key },
@@ -126,16 +155,16 @@ describe('Orders voucher (HTTP + PostgreSQL)', () => {
 
   it('mã sai trả 400, rollback tồn kho và không tạo đơn', async () => {
     const key = randomUUID();
-    const before = await prisma.product.findUniqueOrThrow({
-      where: { id: productId! },
+    const before = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientId! },
     });
 
     await post(payload(key, 'INVALID')).expect(400);
 
-    const after = await prisma.product.findUniqueOrThrow({
-      where: { id: productId! },
+    const after = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientId! },
     });
-    expect(after.stock).toBe(before.stock);
+    expect(Number(after.stock)).toBe(Number(before.stock));
     expect(after.version).toBe(before.version);
     expect(await prisma.order.count({
       where: { idempotencyKey: key },
@@ -146,16 +175,16 @@ describe('Orders voucher (HTTP + PostgreSQL)', () => {
     const key = randomUUID();
     await post(payload(key)).expect(201);
 
-    const before = await prisma.product.findUniqueOrThrow({
-      where: { id: productId! },
+    const before = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientId! },
     });
 
     await post(payload(key, 'BREW10')).expect(409);
 
-    const after = await prisma.product.findUniqueOrThrow({
-      where: { id: productId! },
+    const after = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientId! },
     });
-    expect(after.stock).toBe(before.stock);
+    expect(Number(after.stock)).toBe(Number(before.stock));
     expect(after.version).toBe(before.version);
 
     const saved = await prisma.order.findUniqueOrThrow({

@@ -26,6 +26,7 @@ describe('OrdersService.createPending (integration)', () => {
   let prisma: PrismaService;
   let orders: OrdersService;
   const productIds: number[] = [];
+  const ingredientIds: number[] = [];
   const orderIds: number[] = [];
 
   beforeAll(async () => {
@@ -37,21 +38,62 @@ describe('OrdersService.createPending (integration)', () => {
     prisma = app.get(PrismaService);
     orders = app.get(OrdersService);
 
-    for (const data of [
+    // Tạo nguyên liệu và liên kết với sản phẩm tương ứng để khớp cơ chế kho nguyên liệu
+    const coffeesData = [
       { name: 'E2E Order Coffee', price: 30000, stock: 5 },
-      { name: 'E2E Order Tea', price: 20000, stock: 2 },
-    ]) {
+      { name: 'E2E Order Tea', price: 20000, stock: 3 },
+    ];
+
+    for (const data of coffeesData) {
+      // 1. Tạo nguyên liệu đại diện cho sản phẩm
+      const ing = await prisma.ingredient.create({
+        data: {
+          code: `ING_E2E_${Math.random().toString(36).substring(2, 8)}`,
+          name: `Ingredient for ${data.name}`,
+          unit: 'G',
+          stock: data.stock,
+          version: 0,
+        },
+      });
+      ingredientIds.push(ing.id);
+
+      // 2. Tạo sản phẩm
       const p = await prisma.product.create({
-        data: { ...data, imageUrl: 'https://placehold.co/400x400?text=E2E', sizes, toppings },
+        data: {
+          name: data.name,
+          price: data.price,
+          imageUrl: 'https://placehold.co/400x400?text=E2E',
+          sizes,
+          toppings,
+        },
       });
       productIds.push(p.id);
+
+      // 3. Liên kết sản phẩm với nguyên liệu qua ProductIngredient (1 ly tốn 1 đơn vị nguyên liệu)
+      await prisma.productIngredient.create({
+        data: {
+          productId: p.id,
+          ingredientId: ing.id,
+          quantity: 1,
+          size: 'S',
+          topping: '',
+        },
+      });
     }
   });
 
   afterAll(async () => {
     if (prisma) {
+      // 1. Xóa OrderItem của các đơn hàng test trước
+      await prisma.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+      // 2. Xóa đơn hàng
       await prisma.order.deleteMany({ where: { id: { in: orderIds } } });
+      // 3. Xóa bảng trung gian ProductIngredient
+      await prisma.productIngredient.deleteMany({ where: { productId: { in: productIds } } });
+      // 4. Xóa sản phẩm
       await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+      // 5. Xóa nguyên liệu test
+      await prisma.ingredient.deleteMany({ where: { id: { in: ingredientIds } } });
     }
     await app?.close();
   });
@@ -92,18 +134,20 @@ describe('OrdersService.createPending (integration)', () => {
     expect(saved.items).toHaveLength(2);
   });
 
-    it('trừ đúng tồn kho khi tạo đơn PENDING', async () => {
-    const coffee = await prisma.product.findUniqueOrThrow({
-      where: { id: productIds[0] },
+  it('trừ đúng tồn kho nguyên liệu khi tạo đơn PENDING', async () => {
+    const coffeeIng = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientIds[0] },
     });
-    const tea = await prisma.product.findUniqueOrThrow({
-      where: { id: productIds[1] },
+    const teaIng = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredientIds[1] },
     });
 
-    expect(coffee.stock).toBe(3);
-    expect(tea.stock).toBe(1);
-    expect(coffee.version).toBe(1);
-    expect(tea.version).toBe(1);
+    // Ban đầu coffee stock = 5, order mua 2 -> còn 3.
+    // Ban đầu tea stock = 3, order mua 1 -> còn 2.
+    expect(Number(coffeeIng.stock)).toBe(3);
+    expect(Number(teaIng.stock)).toBe(2);
+    expect(coffeeIng.version).toBe(1);
+    expect(teaIng.version).toBe(1);
   });
 
   it('404 khi có sản phẩm không tồn tại, không tạo đơn', async () => {
@@ -124,13 +168,13 @@ describe('OrdersService.createPending (integration)', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('409 khi tổng số lượng các dòng cùng sản phẩm vượt tồn kho', async () => {
-    const tea = productIds[1]; // tồn kho 2
+  it('409 khi tổng số lượng các dòng cùng sản phẩm vượt tồn kho nguyên liệu', async () => {
+    const tea = productIds[1]; // Nguyên liệu trà hiện còn tồn kho là 2
     await expect(
       orders.createPending(null, {
         items: [
           { productId: tea, size: 'S', toppings: [], quantity: 2 },
-          { productId: tea, size: 'L', toppings: ['Kem'], quantity: 1 },
+          { productId: tea, size: 'L', toppings: ['Kem'], quantity: 1 }, // Tổng yêu cầu là 3 (> 2) -> Sẽ báo 409 Conflict
         ],
       }),
     ).rejects.toBeInstanceOf(ConflictException);

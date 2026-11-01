@@ -6,11 +6,12 @@ import { OrdersService } from '../src/orders/orders.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ProductsService } from '../src/products/products.service';
 
-describe('Đặt hàng đồng thời — tồn kho', () => {
+describe('Đặt hàng đồng thời — tồn kho nguyên liệu', () => {
   let moduleRef: TestingModule;
   let service: OrdersService;
   let prisma: PrismaService;
   let productId: number | undefined;
+  let ingredientId: number | undefined;
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
@@ -25,7 +26,7 @@ describe('Đặt hàng đồng thời — tồn kho', () => {
   afterAll(async () => {
     try {
       if (prisma && productId !== undefined) {
-        // Chỉ tìm và xóa đơn dùng sản phẩm riêng của test này.
+        // Xóa đơn hàng liên quan đến sản phẩm test
         const orders = await prisma.order.findMany({
           where: {
             items: { some: { productId } },
@@ -37,8 +38,19 @@ describe('Đặt hàng đồng thời — tồn kho', () => {
           where: { id: { in: orders.map((order) => order.id) } },
         });
 
+        // Xóa bảng liên kết sản phẩm - nguyên liệu
+        await prisma.productIngredient.deleteMany({
+          where: { productId },
+        });
+
         await prisma.product.delete({
           where: { id: productId },
+        });
+      }
+
+      if (prisma && ingredientId !== undefined) {
+        await prisma.ingredient.delete({
+          where: { id: ingredientId },
         });
       }
     } finally {
@@ -50,20 +62,43 @@ describe('Đặt hàng đồng thời — tồn kho', () => {
     }
   });
 
-  it('10 yêu cầu mua không bán vượt tồn kho 3 sản phẩm', async () => {
-    const product = await prisma.product.create({
+  it('10 yêu cầu mua không bán vượt tồn kho nguyên liệu (tồn kho nguyên liệu = 3)', async () => {
+    // 1. Tạo nguyên liệu mẫu với đầy đủ code, unit, stock và version
+    const ingredient = await prisma.ingredient.create({
       data: {
-        name: `Concurrent test ${randomUUID()}`,
-        price: 30000,
-        imageUrl: '/test.png',
+        code: `ING_${randomUUID().substring(0, 8)}`,
+        name: `Test Ingredient ${randomUUID()}`,
+        unit: 'G',
         stock: 3,
         version: 0,
+      },
+    });
+    ingredientId = ingredient.id;
+
+    // 2. Tạo sản phẩm mẫu độc lập
+    const product = await prisma.product.create({
+      data: {
+        name: `Concurrent test product ${randomUUID()}`,
+        price: 30000,
+        imageUrl: '/test.png',
         sizes: [{ name: 'S', price: 0 }],
         toppings: [],
       },
     });
     productId = product.id;
 
+    // 3. Tạo liên kết ProductIngredient thủ công để gắn nguyên liệu vào sản phẩm
+    await prisma.productIngredient.create({
+      data: {
+        productId: product.id,
+        ingredientId: ingredient.id,
+        quantity: 1, // Mỗi 1 ly tiêu tốn 1 đơn vị nguyên liệu này
+        size: 'S',
+        topping: '',
+      },
+    });
+
+    // 4. Giả lập 10 request mua hàng đồng thời
     const results = await Promise.allSettled(
       Array.from({ length: 10 }, () =>
         service.createPending(null, {
@@ -92,12 +127,13 @@ describe('Đặt hàng đồng thời — tồn kho', () => {
       }
     }
 
-    const updated = await prisma.product.findUniqueOrThrow({
-      where: { id: product.id },
+    // 5. Kiểm tra tồn kho và version của bảng nguyên liệu sau khi xử lý đồng thời
+    const updatedIngredient = await prisma.ingredient.findUniqueOrThrow({
+      where: { id: ingredient.id },
     });
 
-    expect(updated.stock).toBe(3 - successful.length);
-    expect(updated.version).toBe(successful.length);
+   expect(Number(updatedIngredient.stock)).toBe(3 - successful.length);
+    expect(updatedIngredient.version).toBe(successful.length);
 
     const savedOrders = await prisma.order.count({
       where: {

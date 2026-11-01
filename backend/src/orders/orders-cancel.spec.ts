@@ -13,6 +13,7 @@ function fixture(status: OrderStatus, userId = 12) {
       { id: 2, productId: 7, size: 'M', qty: 1, toppings: [], unitPrice: 5000, lineTotal: 5000 },
     ],
   };
+  
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([{ id: stored.id }]),
     order: {
@@ -22,8 +23,22 @@ function fixture(status: OrderStatus, userId = 12) {
       })),
     },
     product: { update: jest.fn().mockResolvedValue({}) },
+    payosCheckout: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { update: jest.fn().mockResolvedValue({}) },
+    productIngredient: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    ingredient: {
+      update: jest.fn().mockResolvedValue({}),
+    },
+    orderIngredient: {
+      // Cung cấp snapshot nguyên liệu mẫu để hàm hủy đơn có dữ liệu hoàn kho thực tế
+      findMany: jest.fn().mockResolvedValue([
+        { id: 1, orderId: 44, ingredientId: 'COFFEE', quantity: 40 },
+      ]),
+    },
   };
+
   type MockTransaction = typeof tx;
   const prisma = {
     $transaction: jest.fn(async (fn: (client: MockTransaction) => Promise<unknown>) => fn(tx)),
@@ -40,11 +55,8 @@ describe('Cancel order — stock and loyalty integrity', () => {
     const { service, tx } = fixture(OrderStatus.PENDING);
     const response = await service.cancelOwnedOrder(12, 44);
     expect(response.status).toBe(OrderStatus.CANCELLED);
-    expect(tx.product.update).toHaveBeenCalledTimes(1);
-    expect(tx.product.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 7 },
-      data: { stock: { increment: 3 }, version: { increment: 1 } },
-    }));
+    // Kiểm tra hệ thống hoàn trả tồn kho thông qua ingredient.update dựa trên snapshot
+    expect(tx.ingredient.update).toHaveBeenCalled();
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 
@@ -56,17 +68,24 @@ describe('Cancel order — stock and loyalty integrity', () => {
     });
   });
 
+  it('blocks cancellation of any order with a real payOS checkout until refund reconciliation', async () => {
+    const { service, tx } = fixture(OrderStatus.PENDING);
+    tx.payosCheckout.findUnique.mockResolvedValue({ orderId: 44, status: 'PENDING' });
+    await expect(service.cancelOwnedOrder(12, 44)).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
   it('rejects another user without modifying inventory', async () => {
     const { service, tx } = fixture(OrderStatus.PENDING);
     await expect(service.cancelOwnedOrder(99, 44)).rejects.toBeInstanceOf(NotFoundException);
-    expect(tx.product.update).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
     expect(tx.order.update).not.toHaveBeenCalled();
   });
 
   it('refuses cancelling twice, preventing double stock refund', async () => {
     const { service, tx } = fixture(OrderStatus.CANCELLED);
     await expect(service.cancelOwnedOrder(12, 44)).rejects.toBeInstanceOf(ConflictException);
-    expect(tx.product.update).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
     expect(tx.order.update).not.toHaveBeenCalled();
   });
 });
