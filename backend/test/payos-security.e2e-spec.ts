@@ -14,9 +14,17 @@ import { PayosGateway } from '../src/payments/payos.gateway';
 
 // Fail closed before connecting. Never execute on an application/Render database.
 const dbUrl = new URL(process.env.DATABASE_URL || 'postgresql://invalid/invalid');
-if (!['localhost', '127.0.0.1', '[::1]'].includes(dbUrl.hostname) ||
-    dbUrl.pathname !== '/brewlite_tv5_payos_test') {
-  throw new Error('TV5 tests require local database brewlite_tv5_payos_test. Set DATABASE_URL in this shell.');
+const allowedDatabase =
+  dbUrl.pathname === '/brewlite_tv5_payos_test' ||
+  (process.env.GITHUB_ACTIONS === 'true' &&
+    dbUrl.pathname === '/brewlite_test');
+if (
+  !['localhost', '127.0.0.1', '[::1]'].includes(dbUrl.hostname) ||
+  !allowedDatabase
+) {
+  throw new Error(
+    'TV5 tests require a dedicated local test database or the GitHub Actions test database.'
+  );
 }
 
 jest.setTimeout(30000);
