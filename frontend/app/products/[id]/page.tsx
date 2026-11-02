@@ -1,5 +1,5 @@
 "use client";
-
+import { getProductImage } from "../../../store/product-images";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -58,7 +58,7 @@ export default function ProductDetailPage() {
     const result = addItem({
       productId: product.id,
       name: product.name,
-      imageUrl: product.imageUrl,
+      imageUrl: getProductImage(product.name, product.imageUrl),
       basePrice: product.price,
       stock: Math.min(product.stock, ingredientCapacity ?? product.stock),
       size,
@@ -188,7 +188,7 @@ export default function ProductDetailPage() {
             <div>
               <img
                 key={product.imageUrl}
-                src={product.imageUrl}
+                src={getProductImage(product.name, product.imageUrl)}
                 alt={product.name}
                 className="aspect-square w-full rounded-xl bg-amber-100 object-cover"
                 onError={(event) => {
