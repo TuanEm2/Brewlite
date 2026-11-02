@@ -1,5 +1,5 @@
 # BrewLite demo HTTPS deployment on Render.
-# Review docs/DEPLOY-RENDER-HTTPS.md before provisioning any resources.
+# Review README.md before provisioning any resources.
 # IMPORTANT: Free tiers are for preview/testing, NOT live-money production.
 services:
   - type: web
