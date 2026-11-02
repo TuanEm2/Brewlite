@@ -1,5 +1,5 @@
 "use client";
-
+import { getProductImage } from "../../store/product-images";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -182,14 +182,20 @@ export default function CartPage() {
                     data-testid="cart-line"
                     className="flex flex-col gap-4 rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center"
                   >
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-amber-100 text-3xl">
-                      {item.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <span aria-hidden="true">🍹</span>
-                      )}
-                    </div>
+                    
+<div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-amber-100">
+  {/* eslint-disable-next-line @next/next/no-img-element */}
+  <img
+    src={getProductImage(item.name, item.imageUrl)}
+    alt={item.name}
+    className="h-full w-full object-cover"
+    onError={(event) => {
+      event.currentTarget.onerror = null;
+      event.currentTarget.src = "/favicon.svg";
+    }}
+  />
+</div>
+
 
                     <div className="min-w-0 flex-1">
                       <Link
