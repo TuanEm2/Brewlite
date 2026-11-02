@@ -10,6 +10,7 @@ import { formatVnd } from "../../../store/cart-view";
 import {
   PAYMENT_METHODS,
   PENDING_CHECKOUT_KEY,
+  cartFingerprint,
   isPayable,
   methodLabel,
   paymentAttemptStorageKey,
@@ -18,6 +19,7 @@ import {
   reusableAttempt,
   statusLabel,
   writeSession,
+  type PendingCheckout,
   type PaymentAttempt,
   type PaymentMethod,
   type PaymentOutcome,
@@ -63,6 +65,7 @@ function MockCheckoutPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
+  const userId = useAuthStore((state) => state.user?.id);
   const clearCart = useCartStore((state) => state.clearCart);
 
   const [mounted, setMounted] = useState(false);
@@ -112,17 +115,22 @@ function MockCheckoutPage() {
     return () => controller.abort();
   }, [mounted, token, id, loadOrder, router]);
 
-  // Khi đơn đã PAID: giỏ hàng của đơn này hoàn tất → xóa giỏ và liên kết đơn chờ.
+  // TV3 Assignment 2: không xóa nhầm giỏ đã thêm món mới sau khi tạo đơn.
   useEffect(() => {
-    if (order?.status !== "PAID") return;
-    const pending = readSession(PENDING_CHECKOUT_KEY) as { orderId?: number } | null;
-    if (pending?.orderId === order.id) {
-      clearCart();
+    if (order?.status !== "PAID" || userId === undefined) return;
+    const saved = readSession(PENDING_CHECKOUT_KEY);
+    const pending = saved && typeof saved === "object" && !Array.isArray(saved)
+      ? saved as Partial<PendingCheckout> : null;
+    if (pending?.orderId === order.id && pending.userId === userId) {
+      const currentItems = useCartStore.getState().items;
+      const voucher = order.voucherCode?.trim().toUpperCase() ?? "";
+      const fingerprint = cartFingerprint(currentItems) + (voucher ? "|v:" + voucher : "");
+      if (pending.fingerprint === fingerprint) clearCart();
+      // Đơn đã PAID: gỡ liên kết chờ ngay cả khi nội dung giỏ đã thay đổi.
       removeSession(PENDING_CHECKOUT_KEY);
     }
     removeSession(paymentAttemptStorageKey(order.id));
-  }, [order, clearCart]);
-
+  }, [order, userId, clearCart]);
   async function pay() {
     if (!token || !order || working || !isPayable(order.status)) return;
     setNotice(null);
