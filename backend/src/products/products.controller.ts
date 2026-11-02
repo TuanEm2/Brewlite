@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { PositiveIntIdPipe } from '../common/pipes/positive-int-id.pipe';
 import {
   ProductDetailDto,
@@ -14,6 +14,17 @@ export class ProductsController {
   @Get()
   findAll(): Promise<ProductSummaryDto[]> {
     return this.productsService.findAll();
+  }
+
+  /** TV4: khách xem số lượng nguyên liệu còn lại cho size và topping đang chọn. */
+  @Get(':id/availability')
+  ingredientAvailability(
+    @Param('id', PositiveIntIdPipe) id: number,
+    @Query('size') size: string,
+    @Query('topping') topping?: string | string[],
+  ) {
+    const toppings = topping === undefined ? [] : Array.isArray(topping) ? topping : [topping];
+    return this.productsService.ingredientAvailability(id, size, toppings);
   }
 
   @Get(':id')

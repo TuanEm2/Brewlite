@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useCartStore } from "../../../store/cart-store";
 import { cartCount } from "../../../store/cart-utils";
+import { IngredientAvailability } from "../../components/ingredient-availability";
 
 type PricedOption = {
   name: string;
@@ -43,13 +44,14 @@ export default function ProductDetailPage() {
   const [cartNotice, setCartNotice] = useState("");
   const [cartNoticeAdded, setCartNoticeAdded] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [ingredientCapacity, setIngredientCapacity] = useState<number | null>(null);
   const addItem = useCartStore((state) => state.addItem);
   const cartQuantity = useCartStore((state) => cartCount(state.items));
 
   useEffect(() => setMounted(true), []);
 
   function addSelectedProduct() {
-    if (!product || product.stock <= 0) return;
+    if (!product || product.stock <= 0 || ingredientCapacity === 0) return;
     const size = product.sizes.find((option) => option.name === selectedSize);
     if (!size) return;
 
@@ -58,7 +60,7 @@ export default function ProductDetailPage() {
       name: product.name,
       imageUrl: product.imageUrl,
       basePrice: product.price,
-      stock: product.stock,
+      stock: Math.min(product.stock, ingredientCapacity ?? product.stock),
       size,
       toppings: product.toppings.filter((topping) =>
         selectedToppings.includes(topping.name)
@@ -80,6 +82,7 @@ export default function ProductDetailPage() {
       setSelectedToppings([]);
       setCartNotice("");
       setCartNoticeAdded(false);
+      setIngredientCapacity(null);
 
       try {
         const response = await fetch(
@@ -206,7 +209,7 @@ export default function ProductDetailPage() {
 
               <p className="mt-2 text-sm text-gray-600">
                 {product.stock > 0
-                  ? `Còn ${product.stock} sản phẩm`
+                  ? `Giới hạn sản phẩm: ${product.stock} ly (xem tồn nguyên liệu bên dưới)`
                   : "Sản phẩm hiện đã hết hàng"}
               </p>
 
@@ -276,6 +279,13 @@ export default function ProductDetailPage() {
                 </div>
               </fieldset>
 
+              <IngredientAvailability
+                productId={product.id}
+                size={selectedSize}
+                toppings={selectedToppings}
+                onCapacityChange={setIngredientCapacity}
+              />
+
               <div
                 aria-live="polite"
                 className="mt-8 rounded-xl bg-amber-50 p-4"
@@ -292,10 +302,11 @@ export default function ProductDetailPage() {
               <button
                 type="button"
                 onClick={addSelectedProduct}
-                disabled={product.stock <= 0 || !selectedSize}
+                disabled={product.stock <= 0 || !selectedSize || ingredientCapacity === 0}
                 className="mt-4 w-full rounded-xl bg-amber-800 px-5 py-3 font-bold text-white transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-gray-400"
               >
-                {product.stock <= 0 ? "Đã hết hàng" : "Thêm vào giỏ hàng"}
+                {product.stock <= 0 || ingredientCapacity === 0
+                  ? "Không đủ nguyên liệu" : "Thêm vào giỏ hàng"}
               </button>
               <Link href="/cart" className="mt-3 inline-block text-sm font-semibold text-amber-900 hover:underline">
                 Giỏ hàng: {mounted ? cartQuantity : "…"} ly → Xem giỏ hàng

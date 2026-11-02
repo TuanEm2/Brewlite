@@ -77,3 +77,28 @@ npm run test:e2e   # Chạy integration test trên PostgreSQL
 - Thành viên: TV4 • Task: 10 (Optimistic Locking & Tồn kho) • Nhánh: `feature/tv04`
 - Người nhận tiếp: TV5 (Loyalty), TV6 (Demo/UI)
 - Vấn đề còn tồn tại: Không có. Toàn bộ cơ chế kiểm soát tồn kho đồng thời đã hoàn thiện và test pass.
+
+## Bổ sung TV4 — Hiển thị tồn kho nguyên liệu trên Frontend (02/11/2026)
+
+**Thành viên phụ trách: TV4.** Phần này mở rộng Task 10 (quản lý nguyên liệu)
+sang chức năng kiểm tra tồn kho trước khi khách đặt hàng. Các commit có thể được
+hỗ trợ thực hiện hoặc push từ tài khoản tích hợp của nhóm trưởng; khi báo cáo phải
+phân biệt vai trò phụ trách với tác giả commit ghi trong Git.
+
+| Thành phần | File | Phạm vi |
+|---|---|---|
+| Backend API | `backend/src/products/products.controller.ts` | GET `/products/:id/availability?size=S&topping=Tr%C3%A2n%20ch%C3%A2u` và alias `/api/products/:id/availability` |
+| Backend xử lý | `backend/src/products/products.service.ts` | Đọc `ProductIngredient` + `Ingredient.stock`, chọn công thức theo size/topping, tính tổng nguyên liệu và ước lượng số ly còn pha |
+| Component FE | `frontend/app/components/ingredient-availability.tsx` | Hiển thị tồn kho từng nguyên liệu (g/ml/cái), định mức/ly, cảnh báo hết nguyên liệu |
+| Trang chi tiết | `frontend/app/products/[id]/page.tsx` | Hiển thị lượng nguyên liệu theo lựa chọn; chặn thêm vào giỏ khi nguyên liệu bằng 0 |
+| Giỏ hàng | `frontend/app/cart/page.tsx` | Hiển thị tồn nguyên liệu tương ứng từng dòng giỏ; cảnh báo khi số ly chọn vượt mức khả dụng |
+| Unit test | `backend/src/products/ingredient-availability.spec.ts` | Kiểm tra size S/M, topping, kho hết, sản phẩm/công thức không tồn tại, dữ liệu sai |
+
+**Lưu ý nghiệp vụ:** Số ly khả dụng chỉ là ước lượng tại thời điểm gọi API.
+Các dòng trong giỏ có thể dùng chung nguyên liệu. Chức năng này không thay thế
+kiểm tra tổng nguyên liệu và optimistic locking trong `OrdersService.createPending()`.
+Không nên dùng số ước lượng FE làm bằng chứng đơn đã giữ được nguyên liệu.
+
+**Kiểm tra nghiệm thu:** Mở `/products/:id`, đổi size/topping; mở `/cart`,
+quan sát số lượng còn, thử đặt vượt mức. Trạng thái CI ghi theo GitHub Actions
+của nhánh `feature/tv04-payos`; không ghi đạt khi chưa xem kết quả chạy thực tế.
