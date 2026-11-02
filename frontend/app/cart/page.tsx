@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "../../store/auth-store";
 import { useCartStore } from "../../store/cart-store";
 import { cartCount, cartTotal } from "../../store/cart-utils";
+import { IngredientAvailability } from "../components/ingredient-availability";
 import { describeOptions, formatVnd, lineTotal, maxAllowed } from "../../store/cart-view";
 import {
   PENDING_CHECKOUT_KEY,
@@ -199,6 +200,12 @@ export default function CartPage() {
                       </Link>
                       <p className="text-sm text-gray-600">{describeOptions(item)}</p>
                       <p className="mt-1 text-sm text-amber-800">Đơn giá: {formatVnd(item.unitPrice)}</p>
+                      <IngredientAvailability
+                        productId={item.productId}
+                        size={item.size.name}
+                        toppings={item.toppings.map((option) => option.name)}
+                        quantity={item.quantity}
+                      />
                     </div>
 
                     <div className="flex items-center gap-2" aria-label={`Số lượng ${item.name}`}>
