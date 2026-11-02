@@ -1,5 +1,5 @@
 'use client';
-
+import { getProductImage } from "../../store/product-images";
 import { useEffect, useState } from 'react';
 import Link from "next/link";
 import { useCartStore } from "../../store/cart-store";
@@ -100,7 +100,7 @@ export default function MenuPage() {
                 <div className="p-6">
                   <div className="h-40 w-full overflow-hidden rounded-xl bg-amber-100 mb-4">
                     <img
-                      src={product.imageUrl?.trim() || "/favicon.svg"}
+                      src={getProductImage(product.name, product.imageUrl)}
                       alt={`Ảnh đồ uống ${product.name}`}
                       loading="lazy"
                       className="h-full w-full object-cover"
